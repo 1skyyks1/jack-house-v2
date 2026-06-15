@@ -46,6 +46,7 @@
     "getDetailFailed": "Failed to get pack details",
     "alreadyExists": "This beatmap already exists",
     "createSuccess": "Pack created successfully",
+    "updateTooFrequent": "This pack can only be updated once per day",
     "updateFailed": "Failed to update pack",
     "updateSuccess": "Pack updated successfully"
   },

@@ -11,7 +11,11 @@
                 <span>{{ t('pack.info.drawerTitle') }}</span>
               </div>
               <div>
-                <el-button circle plain @click="">
+                <el-button class="refresh-pack-btn" circle plain @click="updatePackInfo" :disabled="updateLoading || !packInfo.osu_bid">
+                  <el-icon v-if="updateLoading" class="is-loading" size="large"><Loading /></el-icon>
+                  <el-icon v-else size="large"><Refresh /></el-icon>
+                </el-button>
+                <el-button circle plain>
                   <el-icon size="large"><WarnTriangleFilled /></el-icon>
                 </el-button>
               </div>
@@ -298,10 +302,10 @@
 <script setup>
 import navMenu from '@/components/navmenu.vue'
 import { useRoute } from "vue-router";
-import { WarnTriangleFilled, CollectionTag, ChatDotRound } from "@element-plus/icons-vue";
+import { WarnTriangleFilled, CollectionTag, ChatDotRound, Refresh, Loading } from "@element-plus/icons-vue";
 import { computed, onBeforeMount, reactive, ref } from "vue";
 import { useI18n } from 'vue-i18n';
-import { packById } from '@/api/pack.js'
+import { packById, updatePackFromOsu } from '@/api/pack.js'
 import { packCommentDelete, packCommentList, packCommentCreate } from '@/api/packComment.js'
 import { dayjs, ElMessage } from "element-plus";
 import { useBreakpoints } from "@vueuse/core";
@@ -324,6 +328,7 @@ const commentPageSize = ref(3)
 const commentPage = ref(1)
 const totalComments = ref(0)
 const commentLoading = ref(false)
+const updateLoading = ref(false)
 
 const breakpoints = useBreakpoints({
   tablet: 768,
@@ -423,15 +428,40 @@ const goToPackLink = (type, bid) => {
   }
 }
 
-const getPackInfo = () => {
-  packById(packId).then(res => {
+const getPackInfo = async () => {
+  packLoading.value = true
+  try {
+    const res = await packById(packId)
     Object.assign(packInfo, res.data)
     packInfo.maps.sort((a, b) => a.rating - b.rating)
     if (packInfo.maps && packInfo.maps.length > 0) {
       selectedMap.value = packInfo.maps[0]
     }
+  } finally {
     packLoading.value = false
-  })
+  }
+}
+
+const isUpdatedToday = (updatedTime) => {
+  if (!updatedTime) return false
+  return dayjs(updatedTime).isSame(dayjs(), 'day')
+}
+
+const updatePackInfo = async () => {
+  if (isUpdatedToday(packInfo.updated_time)) {
+    ElMessage.warning(t('pack.info.updateLimited'))
+    return
+  }
+
+  updateLoading.value = true
+  try {
+    await updatePackFromOsu(packInfo.osu_bid)
+    await getPackInfo()
+    ElMessage.success(t('pack.info.updateSuccess'))
+  } catch (error) {
+  } finally {
+    updateLoading.value = false
+  }
 }
 
 const getCommentsByPackId = async () => {
@@ -488,6 +518,14 @@ onBeforeMount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.refresh-pack-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.refresh-pack-btn :deep(.el-icon.is-loading) {
+  margin: 0;
 }
 .el-card :deep(.el-card__body) {
   padding: 0;

@@ -16,9 +16,6 @@ router.get('/user/:user_id', postFileController.getFileByUserId);
 // 上传投稿
 router.post('/upload/:post_id', checkAuth(), postFileController.uploadFile);
 
-// 获取上传链接
-router.get('/upload/:post_id', checkAuth(), postFileController.getUploadUrl);
-
 // 创建投稿
 router.post('/', checkAuth(), postFileController.createPostFile);
 

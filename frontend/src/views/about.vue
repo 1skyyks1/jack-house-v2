@@ -86,12 +86,12 @@ const groups = [
     pic: "https://pub-1d83badff2eb42d5be2db70eeb6a4b78.r2.dev/mjhc.jpg",
     link: "https://qm.qq.com/q/PRaI9t6P62"
   },
-  {
-    title: "AAASETU",
-    desc: "setu群(R18)",
-    pic: "https://pub-1d83badff2eb42d5be2db70eeb6a4b78.r2.dev/setu.jpg",
-    link: "https://qm.qq.com/q/p6WB1o5bMY"
-  },
+  // {
+  //   title: "AAASETU",
+  //   desc: "setu群(R18)",
+  //   pic: "https://pub-1d83badff2eb42d5be2db70eeb6a4b78.r2.dev/setu.jpg",
+  //   link: "https://qm.qq.com/q/p6WB1o5bMY"
+  // },
   {
     title: "叠屋三角洲",
     desc: "三角洲分群",

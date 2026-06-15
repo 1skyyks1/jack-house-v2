@@ -2,7 +2,7 @@ const { Post, PostTranslation, User } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 const ROLES = require("../../config/roles");
-const { addFolder, getAuthCode } = require('../../utils/pan');
+// const { addFolder, getAuthCode } = require('../../utils/pan');
 
 // 获取所有帖子
 exports.getAllPosts = async (req, res) => {
@@ -281,21 +281,14 @@ exports.createPost = async (req, res) => {
     const t = await sequelize.transaction();
 
     try {
-        let folder_id;
-        if(Number(type) === 1) {
-            const authCode = await getAuthCode()
-            folder_id = await addFolder(endDate.toISOString().split('T')[0], '227868', authCode);
-        }
-
         const newPost = await Post.create({
             user_id,
             type,
             end: endDate || null,
             limit: limit || null,
-            folder_id: folder_id || null,
         }, { transaction: t });
 
-        for( const { language, title, content } of translations ){
+        for(const { language, title, content } of translations){
             await PostTranslation.create({
                 post_id: newPost.post_id,
                 language,

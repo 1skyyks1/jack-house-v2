@@ -1,7 +1,7 @@
 import { createI18n } from 'vue-i18n'
 import messages from './index.js'
 
-const savedLocale = localStorage.getItem('locale') || 'en';
+const savedLocale = localStorage.getItem('locale') || 'zh';
 
 const i18n = createI18n({
     legacy: false,

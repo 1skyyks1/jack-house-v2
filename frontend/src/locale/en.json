@@ -255,7 +255,9 @@
         "postSuccess": "Posted successfully",
         "deleteComment": "Delete",
         "deleteCommentSuccess": "Deleted Successfully"
-      }
+      },
+      "updateLimited": "This mapset has already been updated today. Please try again tomorrow.",
+      "updateSuccess": "Mapset info refreshed successfully"
     }
   },
   "request": {
@@ -270,7 +272,7 @@
     "qq": "QQ Groups",
     "dc": "Discord Servers",
     "intro": "About Jack House...",
-    "p": "<p><strong>4Key Jack House</strong> — founded on <em>June 1, 2022</em> — is a community for jack players.</p><p>By <em>August 2025</em>, it has grown to over <em><strong>4,000</strong></em><strong> members</strong> worldwide, with the majority from China. </p><p>\uD83D\uDC40<em>What can you do here?</em> - Search for a variety of jack packs, participate in rare jack-only tournaments, and connect with jack players across the globe...</p><p>There are no entrance requirements — <strong>whether you are jack main or not, everyone is welcome to join!</strong></p>"
+    "p": "<p><strong>4Key Jack House</strong> — founded on <em>June 1, 2022</em> — is a community for jack players.</p><p>By <em>August 2025</em>, it has grown to over <em><strong>4,000</strong></em><strong> members</strong> worldwide, with the majority from China. </p><p>👀<em>What can you do here?</em> - Search for a variety of jack packs, participate in rare jack-only tournaments, and connect with jack players across the globe...</p><p>There are no entrance requirements — <strong>whether you are jack main or not, everyone is welcome to join!</strong></p>"
   },
   "event": {
     "overview": "Overview",

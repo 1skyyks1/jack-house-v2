@@ -47,7 +47,8 @@
     "alreadyExists": "该图包已存在",
     "createSuccess": "图包创建成功",
     "updateFailed": "更新失败",
-    "updateSuccess": "更新成功"
+    "updateSuccess": "更新成功",
+    "updateTooFrequent": "该图包今天已更新，请明天再试"
   },
   "postComment": {
     "fetchFailed": "获取评论失败",

@@ -2,7 +2,7 @@ const { User, PostFile, Post } = require('../../models')
 const ROLES = require('../../config/roles')
 const sequelize = require('../../config/db')
 const { Op } = require("sequelize");
-const { fetchUploadUrl, getSign, getAuthCode } = require('../../utils/pan');
+// const { fetchUploadUrl, getSign, getAuthCode } = require('../../utils/pan');
 const { upload } = require('../../config/multer')
 // const { uploadToStorage, preSign } = require('../../utils/tebiS3')
 const fs = require('fs')
@@ -118,7 +118,30 @@ exports.uploadFile = [
         const filePath = file.path;
         const fileName = file.filename;
 
+        const removeTempFile = () => {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        };
+
         try {
+            const post = await Post.findByPk(post_id);
+            if (!post) {
+                removeTempFile();
+                return res.status(404).json({ message: req.t('post.notFound') });
+            }
+
+            if (post.limit !== null) {
+                const uploadCount = await PostFile.count({
+                    where: { post_id, user_id }
+                });
+
+                if (uploadCount >= post.limit) {
+                    removeTempFile();
+                    return res.status(403).json({ message: req.t('postFile.uploadLimit') });
+                }
+            }
+
             await mc.fPutObject(process.env.MINIO_POSTFILES_BUCKET, fileName, filePath, {
                 'Content-Type': file.mimetype,
             });
@@ -131,13 +154,11 @@ exports.uploadFile = [
                 size: file.size,
             });
 
-            fs.unlinkSync(filePath);
+            removeTempFile();
             res.status(201).json({ message: req.t('postFile.uploadSuccess'), data: postFile });
         } catch (error) {
             // 如果上传失败，删除临时文件
-            if (fs.existsSync(file.path)) {
-                fs.unlinkSync(file.path);
-            }
+            removeTempFile();
             console.log(error)
             res.status(500).json({ message: req.t('postFile.uploadFailed') });
         }
@@ -162,27 +183,27 @@ exports.createPostFile = async (req, res) => {
     }
 }
 
-// 获取上传链接
-exports.getUploadUrl = async (req, res) => {
-    const { post_id } = req.params;
-    const user_id = req.user.user_id;
-    try {
-        const cnt = await PostFile.count({
-            where: { user_id, post_id }
-        })
-        const post = await Post.findByPk(post_id)
-        if(cnt >= post.limit){
-            return res.status(403).json({ message: req.t('postFile.uploadLimit') });
-        }
-        const authCode = await getAuthCode()
-        const url = await fetchUploadUrl(authCode, String(post.folder_id));
-        if(url){
-            res.status(200).json({ data: url });
-        }
-    } catch (err) {
-        res.status(500).json({ message: req.t('postFile.uploadFailed') });
-    }
-}
+// // 获取上传链接
+// exports.getUploadUrl = async (req, res) => {
+//     const { post_id } = req.params;
+//     const user_id = req.user.user_id;
+//     try {
+//         const cnt = await PostFile.count({
+//             where: { user_id, post_id }
+//         })
+//         const post = await Post.findByPk(post_id)
+//         if(cnt >= post.limit){
+//             return res.status(403).json({ message: req.t('postFile.uploadLimit') });
+//         }
+//         const authCode = await getAuthCode()
+//         const url = await fetchUploadUrl(authCode, String(post.folder_id));
+//         if(url){
+//             res.status(200).json({ data: url });
+//         }
+//     } catch (err) {
+//         res.status(500).json({ message: req.t('postFile.uploadFailed') });
+//     }
+// }
 
 // 获取文件下载url
 // exports.getFileUrl = async (req, res) => {

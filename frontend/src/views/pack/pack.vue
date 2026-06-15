@@ -433,7 +433,7 @@ const getPackLink = (type, bid) => {
     case 2:
       return `https://txy1.sayobot.cn/beatmaps/download/novideo/${bid}`;
     case 3:
-      return `https://api.nerinyan.moe/d/${bid}`
+      return `https://api.nerinyan.moe/v2/d/${bid}`
     default:
       return '#';
   }

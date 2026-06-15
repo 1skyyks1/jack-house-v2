@@ -51,3 +51,11 @@ export function packFromOsu(bid, data) {
         data: data,
     })
 }
+
+// 更新图包信息
+export function updatePackFromOsu(bid) {
+    return request({
+        url: `/pack/osu/${bid}`,
+        method: "PUT",
+    })
+}
