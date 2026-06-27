@@ -16,52 +16,11 @@
 </div>
 
 ## 📁 项目结构
-```
-frontend
-├── /public                 
-├── /src                  // 核心代码
-│  ├── /api               // 请求函数 (Axios)
-│  ├── /assets            // 静态资源如字体、图片
-│  │  ├── /font
-│  │  └── /pic
-│  ├── /components        // 可复用的 Vue 组件
-│  │  ├── /ui             // shadcn-vue 的 UI 组件
-│  │  └── ...
-│  ├── /lib               // 核心库函数，如 cn()
-│  ├── /locale            // 国际化 (i18n)
-│  ├── /router            // 路由配置
-│  ├── /store             // 状态管理
-│  ├── /style             // 全局 CSS 样式
-│  ├── /utils             // 通用工具函数
-│  ├── /views             // 页面级组件
-│  │  ├── /admin          // 管理后台页面
-│  │  ├── /auth
-│  │  └── ...
-│  ├── App.vue            // 根 Vue 组件
-│  └── main.js            // 应用入口
-├── components.json       // shadcn-vue 命令行工具配置
-├── index.html            // SPA 模板
-├── jsconfig.json         // JS 配置
-├── package-lock.json
-├── package.json
-└── vite.config.js
-```
 
-```
-backend
-├── /config               // 服务配置文件
-│  ├── db.js              // 数据库 (Sequelize) 连接配置
-│  ├── minio.js           // MinIO 客户端配置
-│  └── ...
-├── /controller           // 核心业务逻辑
-├── /middleware           // 中间件
-├── /models               // 数据库模型
-├── /routes               // 路由定义
-├── /utils                // 通用工具函数
-├── package-lock.json
-├── package.json
-└── server.js             // 入口文件
-```
+- `frontend/`：Vue 3 单页应用，包含页面、路由、Vuex、国际化、可复用组件和前端 API 封装。
+- `backend/`：Express + Sequelize 服务，包含路由、控制器、模型、鉴权中间件、文件上传和国际化错误消息。
+
+这个仓库是旧实现，新的 React 重构版位于 `jack-house-v3`。
 
 ## 🛠️ 技术栈
 
@@ -95,11 +54,13 @@ backend
 | express-rate-limit | 基础的速率限制中间件           |
 | i18next          | 国际化框架                     |
 
-
-
 ## 🚀 安装
-开始前，请确保您的开发环境已安装以下软件：
-Node.js（推荐 v18.x 或更高版本）、NPM 或 Yarn、MariaDB 数据库服务...
+开始前请确认以下依赖已经具备：
+
+- Node.js
+- npm
+- MariaDB
+- 后端所需环境变量，例如数据库、JWT、MinIO 等配置
 
 1. 克隆仓库
 ```sh
@@ -114,7 +75,7 @@ cd backend
 
 npm install
 
-node server.js
+npm start
 ```
 
 3. 前端配置 (/frontend)

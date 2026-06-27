@@ -19,7 +19,7 @@ const TMatch = sequelize.define('TMatch', {
     },
     team1_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         comment: '红队'
     },
     team2_id: {
@@ -54,11 +54,68 @@ const TMatch = sequelize.define('TMatch', {
         allowNull: true,
         comment: '胜者队伍id'
     },
+    result_type: {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'normal',
+        comment: 'normal/wbd/ff'
+    },
+    result_note: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'WBD/FF 或手动改判备注'
+    },
+    winner_overridden: {
+        type: DataTypes.TINYINT,
+        allowNull: false,
+        defaultValue: 0,
+        comment: '胜方是否由 referee 手动修改'
+    },
     is_possible: {
         type: DataTypes.TINYINT,
         allowNull: false,
         defaultValue: 0,
         comment: 'GF(P)标记'
+    },
+    bracket_group: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        comment: 'winner/loser/grand_final/reset_final'
+    },
+    round_no: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '同 bracket group 内轮次序号'
+    },
+    slot_no: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '同轮次内位置'
+    },
+    source_match_1_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '队伍1来源比赛'
+    },
+    source_match_1_result: {
+        type: DataTypes.STRING(16),
+        allowNull: true,
+        comment: 'winner/loser'
+    },
+    source_match_2_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '队伍2来源比赛'
+    },
+    source_match_2_result: {
+        type: DataTypes.STRING(16),
+        allowNull: true,
+        comment: 'winner/loser'
+    },
+    hidden_until_match_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '隐藏到指定比赛完成后再展示'
     },
     scheduled_time: {
         type: DataTypes.DATE,
@@ -69,7 +126,7 @@ const TMatch = sequelize.define('TMatch', {
         type: DataTypes.TINYINT,
         allowNull: false,
         defaultValue: 0,
-        comment: '0=待开始 1=进行中 2=已结束'
+        comment: '0=未开始 1=兼容旧进行中 2=已完成'
     },
     team1_timeout_used: {
         type: DataTypes.TINYINT,

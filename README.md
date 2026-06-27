@@ -16,52 +16,11 @@
 </div>
 
 ## 📁 Project Structure
-```
-frontend
-├── /public                 
-├── /src                  // Main application source
-│  ├── /api               // Request functions (Axios)
-│  ├── /assets            // Font & image files
-│  │  ├── /font
-│  │  └── /pic
-│  ├── /components        // Reusable Vue components
-│  │  ├── /ui             // UI primitives from shadcn-vue
-│  │  └── ...
-│  ├── /lib               // Core library utilities
-│  ├── /locale            // I18n language files
-│  ├── /router            // Vue Router configuration
-│  ├── /store             // Vuex state
-│  ├── /style             // Global CSS styles
-│  ├── /utils             // General utility functions
-│  ├── /views             // Page-level components
-│  │  ├── /admin          // Admin dashboard pages
-│  │  ├── /auth
-│  │  └── ...
-│  ├── App.vue            // Root Vue component
-│  └── main.js            // Application entry point
-├── components.json       // shadcn-vue CLI configuration
-├── index.html            // Main Template for SPA
-├── jsconfig.json         // JS configuration
-├── package-lock.json
-├── package.json
-└── vite.config.js
-```
 
-```
-backend
-├── /config               // Service configurations
-│  ├── db.js              // Database (Sequelize) connection
-│  ├── minio.js           // MinIO client setup
-│  └── ...
-├── /controller           // Request handlers
-├── /middleware           // Express middleware
-├── /models               // Database models
-├── /routes               // API endpoint definitions
-├── /utils                // Backend utility functions
-├── package-lock.json
-├── package.json
-└── server.js             // Backend server entry point
-```
+- `frontend/`: Vue 3 SPA, including views, router, Vuex store, i18n files, reusable components, and API wrappers.
+- `backend/`: Express + Sequelize service, including routes, controllers, models, auth middleware, file upload handling, and i18n messages.
+
+This repository is the legacy implementation. The new React rewrite lives in `jack-house-v3`.
 
 ## 🛠️ Tech Stack
 
@@ -95,11 +54,13 @@ backend
 | express-rate-limit  | Basic rate limiting middleware         |
 | i18next             | Internationalization framework         |
 
-
-
 ## 🚀 Setup
-Before you begin, ensure you have the following software installed on your development machine:
-Node.js (v18.x or higher is recommended), NPM or Yarn, MariaDB Database Service...
+Before you begin, make sure the following are available:
+
+- Node.js
+- npm
+- MariaDB
+- Required environment variables for backend services such as database, JWT, and MinIO
 
 1. Clone the Repository
 ```sh
@@ -114,7 +75,7 @@ cd backend
 
 npm install
 
-node server.js
+npm start
 ```
 
 3. Frontend Setup (/frontend)

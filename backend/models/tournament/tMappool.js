@@ -15,7 +15,7 @@ const TMappool = sequelize.define('TMappool', {
     type: {
         type: DataTypes.STRING(16),
         allowNull: false,
-        comment: 'RC/LN/HB/SV/TB'
+        comment: 'FU/DS/MD/LT/AC/QS/MN/RM/MX/DF/TB'
     },
     map_id: {
         type: DataTypes.INTEGER,
@@ -40,7 +40,14 @@ const TMappool = sequelize.define('TMappool', {
     }
 }, {
     tableName: 't_mappool',
-    timestamps: false
+    timestamps: false,
+    indexes: [
+        {
+            unique: true,
+            fields: ['round_id', 'map_id']
+        },
+        { fields: ['round_id', 'type'] }
+    ]
 });
 
 module.exports = TMappool;

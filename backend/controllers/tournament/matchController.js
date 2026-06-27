@@ -1,9 +1,10 @@
-const { TRound, TMappool, TMatch, TGame, TTeam, TPlayer, Tournament } = require('../../models/tournament');
+const { TRound, TMappool, TMatch, TGame, TTeam, TPlayer } = require('../../models/tournament');
 const User = require('../../models/user/user');
-const osu = require('osu-api-v2-js');
-
-const CLIENT_ID = Number(process.env.OSU_CLIENT_ID);
-const CLIENT_SECRET = process.env.OSU_CLIENT_SECRET;
+const bracketService = require('../../services/tournament/bracketService');
+const matchService = require('../../services/tournament/matchService');
+const auditService = require('../../services/tournament/auditService');
+const osuMatchService = require('../../services/tournament/osuMatchService');
+const { translateMessage, translatePayload } = require('../../utils/tournamentI18n');
 
 // 获取轮次列表
 exports.getRounds = async (req, res) => {
@@ -25,21 +26,11 @@ exports.getRounds = async (req, res) => {
 exports.createRound = async (req, res) => {
     try {
         const { tid } = req.params;
-        const { name, bracket_type, first_to, order, start_time, end_time } = req.body;
-
-        const round = await TRound.create({
-            t_id: tid,
-            name,
-            bracket_type, // 0=胜者组 1=败者组
-            first_to,
-            order,
-            start_time,
-            end_time
-        });
+        const round = await matchService.createRound(tid, req.body, req.user?.user_id);
         res.status(201).json(round);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
@@ -47,21 +38,11 @@ exports.createRound = async (req, res) => {
 exports.updateRound = async (req, res) => {
     try {
         const { tid, roundId } = req.params;
-        const round = await TRound.findOne({ where: { id: roundId, t_id: tid } });
-        if (!round) {
-            return res.status(404).json({ message: '轮次不存在' });
-        }
-
-        const fields = ['name', 'bracket_type', 'first_to', 'order', 'start_time', 'end_time'];
-        fields.forEach(f => {
-            if (req.body[f] !== undefined) round[f] = req.body[f];
-        });
-
-        await round.save();
+        const round = await matchService.updateRound(tid, roundId, req.body, req.user?.user_id);
         res.json(round);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
@@ -69,22 +50,22 @@ exports.updateRound = async (req, res) => {
 exports.deleteRound = async (req, res) => {
     try {
         const { tid, roundId } = req.params;
-        const round = await TRound.findOne({ where: { id: roundId, t_id: tid } });
-        if (!round) {
-            return res.status(404).json({ message: '轮次不存在' });
-        }
-        await round.destroy();
-        res.json({ message: '删除成功' });
+        await matchService.deleteRound(tid, roundId, req.user?.user_id);
+        res.json({ message: req.t('tournament.messages.deleteSuccess') });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
 // 获取轮次图池
 exports.getRoundMappool = async (req, res) => {
     try {
-        const { roundId } = req.params;
+        const { tid, roundId } = req.params;
+        const round = await TRound.findOne({ where: { id: roundId, t_id: tid } });
+        if (!round) {
+            return res.status(404).json({ message: req.t('tournament.errors.roundNotFound') });
+        }
         const maps = await TMappool.findAll({
             where: { round_id: roundId },
             order: [['type', 'ASC'], ['id', 'ASC']]
@@ -99,37 +80,24 @@ exports.getRoundMappool = async (req, res) => {
 // 添加轮次图池
 exports.addRoundMap = async (req, res) => {
     try {
-        const { roundId } = req.params;
-        const { type, map_id, artist, title, mapper } = req.body;
-
-        const map = await TMappool.create({
-            round_id: roundId,
-            type,
-            map_id,
-            artist,
-            title,
-            mapper
-        });
+        const { tid, roundId } = req.params;
+        const map = await matchService.addRoundMap(tid, roundId, req.body, req.user?.user_id);
         res.status(201).json(map);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
 // 删除轮次图池
 exports.deleteRoundMap = async (req, res) => {
     try {
-        const { mapId } = req.params;
-        const map = await TMappool.findByPk(mapId);
-        if (!map) {
-            return res.status(404).json({ message: '图不存在' });
-        }
-        await map.destroy();
-        res.json({ message: '删除成功' });
+        const { tid, mapId } = req.params;
+        await matchService.deleteRoundMap(tid, mapId, req.user?.user_id);
+        res.json({ message: req.t('tournament.messages.deleteSuccess') });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
@@ -149,7 +117,7 @@ exports.getBracket = async (req, res) => {
                 { model: TTeam, as: 'team2', attributes: ['id', 'display_name'] },
                 { model: TTeam, as: 'winner', attributes: ['id', 'display_name'] }
             ],
-            order: [[{ model: TRound, as: 'round' }, 'order', 'ASC'], ['id', 'ASC']]
+            order: [[{ model: TRound, as: 'round' }, 'order', 'ASC'], ['slot_no', 'ASC'], ['id', 'ASC']]
         });
         res.json(matches);
     } catch (error) {
@@ -162,87 +130,18 @@ exports.getBracket = async (req, res) => {
 exports.generateBracket = async (req, res) => {
     try {
         const { tid } = req.params;
-        const { round_id } = req.body;
-
-        // 获取轮次
-        const round = await TRound.findOne({ where: { id: round_id, t_id: tid } });
-        if (!round) {
-            return res.status(404).json({ message: '轮次不存在' });
-        }
-
-        // 获取资格赛晋级队伍（按排名）
-        const tournament = await Tournament.findByPk(tid);
-        const teams = await TTeam.findAll({
-            where: { t_id: tid, status: 1 },
-            order: [['qual_rank', 'ASC']],
-            limit: tournament.qual_top_n
-        });
-
-        if (teams.length < 2) {
-            return res.status(400).json({ message: '队伍数量不足' });
-        }
-
-        // 种子对阵算法（1v32, 16v17, 8v25...）
-        const n = teams.length;
-        const matches = [];
-
-        // 标准双败制种子位置
-        const seedPairs = generateSeedPairs(n);
-
-        for (let i = 0; i < seedPairs.length; i++) {
-            const [seed1, seed2] = seedPairs[i];
-            const team1 = teams[seed1 - 1];
-            const team2 = seed2 <= n ? teams[seed2 - 1] : null;
-
-            const match = await TMatch.create({
-                round_id: round.id,
-                team1_id: team1.id,
-                team2_id: team2?.id || null,
-                scheduled_time: round.start_time || new Date(),
-                status: team2 ? 0 : 2, // 如果没有对手，直接晋级
-                winner_id: team2 ? null : team1.id
-            });
-            matches.push(match);
-        }
-
-        res.json({ message: '对阵表生成完成', matches });
+        const result = await bracketService.generateDoubleEliminationBracket(tid, req.user?.user_id, req.body);
+        res.json(translatePayload(req, result));
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
-
-// 生成种子对阵
-function generateSeedPairs(n) {
-    // 向上取整到 2 的幂次
-    const size = Math.pow(2, Math.ceil(Math.log2(n)));
-    const pairs = [];
-
-    // 标准种子对阵：1v32, 16v17, 8v25, 9v24, 4v29, 13v20, 5v28, 12v21...
-    function fillBracket(pos, count) {
-        if (count === 1) return [pos];
-        const half = count / 2;
-        const left = fillBracket(pos, half);
-        const right = fillBracket(pos + half, half);
-        const result = [];
-        for (let i = 0; i < half; i++) {
-            result.push(left[i], right[half - 1 - i]);
-        }
-        return result;
-    }
-
-    const seeds = fillBracket(1, size);
-    for (let i = 0; i < seeds.length; i += 2) {
-        pairs.push([seeds[i], seeds[i + 1]]);
-    }
-
-    return pairs;
-}
 
 // 获取单场比赛详情
 exports.getMatch = async (req, res) => {
     try {
-        const { matchId } = req.params;
+        const { tid, matchId } = req.params;
         const match = await TMatch.findByPk(matchId, {
             include: [
                 { model: TRound, as: 'round', include: [{ model: TMappool, as: 'mappool' }] },
@@ -253,7 +152,10 @@ exports.getMatch = async (req, res) => {
             ]
         });
         if (!match) {
-            return res.status(404).json({ message: '比赛不存在' });
+            return res.status(404).json({ message: req.t('tournament.errors.matchNotFound') });
+        }
+        if (!match.round || Number(match.round.t_id) !== Number(tid)) {
+            return res.status(404).json({ message: req.t('tournament.errors.matchNotFound') });
         }
         res.json(match);
     } catch (error) {
@@ -265,50 +167,31 @@ exports.getMatch = async (req, res) => {
 // 创建比赛
 exports.createMatch = async (req, res) => {
     try {
-        const { round_id, team1_id, team2_id, scheduled_time, is_possible } = req.body;
-
-        const match = await TMatch.create({
-            round_id,
-            team1_id,
-            team2_id,
-            scheduled_time,
-            is_possible: is_possible || 0,
-            status: 0
-        });
+        const { tid } = req.params;
+        const match = await matchService.createMatch(tid, req.body, req.user?.user_id);
         res.status(201).json(match);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
 // 更新比赛
 exports.updateMatch = async (req, res) => {
     try {
-        const { matchId } = req.params;
-        const match = await TMatch.findByPk(matchId);
-        if (!match) {
-            return res.status(404).json({ message: '比赛不存在' });
-        }
-
-        const fields = ['mp_id', 'team1_roll', 'team2_roll', 'team1_score', 'team2_score',
-            'winner_id', 'scheduled_time', 'status', 'team1_timeout_used', 'team2_timeout_used', 'is_possible'];
-        fields.forEach(f => {
-            if (req.body[f] !== undefined) match[f] = req.body[f];
-        });
-
-        await match.save();
-        res.json(match);
+        const { tid, matchId } = req.params;
+        const { match, propagation } = await matchService.updateMatch(tid, matchId, req.body, req.user?.user_id);
+        res.json({ ...match.toJSON(), propagation });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
 // 从 MP 获取比赛分数
 exports.fetchMatchScores = async (req, res) => {
     try {
-        const { matchId } = req.params;
+        const { tid, matchId } = req.params;
 
         const match = await TMatch.findByPk(matchId, {
             include: [
@@ -319,7 +202,10 @@ exports.fetchMatchScores = async (req, res) => {
         });
 
         if (!match || !match.mp_id) {
-            return res.status(400).json({ message: '请先设置 MP 房间 ID' });
+            return res.status(400).json({ message: req.t('tournament.errors.mpIdRequired') });
+        }
+        if (!match.round || Number(match.round.t_id) !== Number(tid)) {
+            return res.status(404).json({ message: req.t('tournament.errors.matchNotFound') });
         }
 
         // 获取队伍选手的 osu_uid
@@ -335,12 +221,11 @@ exports.fetchMatchScores = async (req, res) => {
             if (user?.osu_uid) team2Uids.add(user.osu_uid);
         }
 
-        // 调用 osu! API
-        const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET);
-        const mpMatch = await api.getMatch(match.mp_id);
+        // 调用 osu! API；matches 端点默认只返回 100 条 events，需要分页读取完整 MP。
+        const mpMatch = await osuMatchService.getCompleteMatch(match.mp_id);
 
         if (!mpMatch || !mpMatch.events) {
-            return res.status(400).json({ message: '无法获取比赛数据' });
+            return res.status(400).json({ message: req.t('tournament.errors.fetchMatchFailed') });
         }
 
         // 图池映射
@@ -350,24 +235,32 @@ exports.fetchMatchScores = async (req, res) => {
         }
 
         // 解析所有 games
-        const games = mpMatch.events.filter(e => e.game);
+        const games = osuMatchService.getGameEvents(mpMatch);
         const savedGames = [];
         let team1Total = 0;
         let team2Total = 0;
+        const oldGames = await TGame.findAll({
+            where: { match_id: match.id },
+            order: [['order', 'ASC'], ['id', 'ASC']]
+        });
+        const oldValue = {
+            games: oldGames.map(game => auditService.pickModelValues(game)),
+            match: auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status'])
+        };
 
         // 清除旧的 game 记录
         await TGame.destroy({ where: { match_id: match.id } });
 
         for (let i = 0; i < games.length; i++) {
             const game = games[i].game;
-            const poolMap = mapIdToPool.get(game.beatmap_id);
+            const poolMap = mapIdToPool.get(osuMatchService.getGameBeatmapId(game));
             if (!poolMap) continue; // 不在图池中的图跳过
 
             let p1Score = 0, p2Score = 0;
             let p1Id = null, p2Id = null;
 
-            for (const score of game.scores) {
-                const scoreVal = score.legacy_total_score || score.total_score;
+            for (const score of osuMatchService.getGameScores(game)) {
+                const scoreVal = osuMatchService.getScoreValue(score);
                 if (team1Uids.has(score.user_id)) {
                     p1Score = scoreVal;
                     const user = await User.findOne({ where: { osu_uid: score.user_id } });
@@ -385,7 +278,7 @@ exports.fetchMatchScores = async (req, res) => {
             if (winner === 1) team1Total++;
             else team2Total++;
 
-            await TGame.create({
+            const savedGame = await TGame.create({
                 match_id: match.id,
                 map_id: poolMap.id,
                 order: i + 1,
@@ -399,6 +292,7 @@ exports.fetchMatchScores = async (req, res) => {
             });
 
             savedGames.push({
+                id: savedGame.id,
                 order: i + 1,
                 map: poolMap.type,
                 p1Score,
@@ -421,13 +315,33 @@ exports.fetchMatchScores = async (req, res) => {
         }
 
         await match.save();
+        let propagation = null;
+        if (match.status === 2 && match.winner_id) {
+            propagation = await bracketService.propagateMatchResult(match.id, req.user?.user_id);
+        }
+
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'match',
+            entity_id: match.id,
+            action: 'fetch_match_scores',
+            old_value: oldValue,
+            new_value: {
+                games: savedGames,
+                match: auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status']),
+                mp_id: match.mp_id,
+                propagation
+            },
+            operator_id: req.user?.user_id
+        });
 
         res.json({
-            message: '分数获取完成',
+            message: req.t('tournament.messages.scoresFetched'),
             team1_score: team1Total,
             team2_score: team2Total,
             games: savedGames,
-            winner: match.winner_id ? (match.winner_id === match.team1_id ? 'team1' : 'team2') : null
+            winner: match.winner_id ? (match.winner_id === match.team1_id ? 'team1' : 'team2') : null,
+            propagation
         });
     } catch (error) {
         console.error(error);

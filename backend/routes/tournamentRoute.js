@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
-const { isHost, isReferee, isPooler, isStaff } = require('../middleware/tournamentAuth');
+const { isHost, isCreatorHost, isReferee, isPooler, isStaff } = require('../middleware/tournamentAuth');
+const { ROLES } = require('../config/roles');
 
 // 控制器
 const tournamentController = require('../controllers/tournament/tournamentController');
@@ -9,8 +10,12 @@ const teamController = require('../controllers/tournament/teamController');
 const staffController = require('../controllers/tournament/staffController');
 const qualifierController = require('../controllers/tournament/qualifierController');
 const matchController = require('../controllers/tournament/matchController');
+const contentController = require('../controllers/tournament/contentController');
+const auditController = require('../controllers/tournament/auditController');
+const historicalImportController = require('../controllers/tournament/historicalImportController');
 const { Tournament } = require('../models/tournament');
 const { Op } = require('sequelize');
+const { translateMessage } = require('../utils/tournamentI18n');
 
 // ========== 参数解析：支持 ID 或 Acronym（大小写不敏感） ==========
 router.param('tid', async (req, res, next, tid) => {
@@ -33,7 +38,7 @@ router.param('tid', async (req, res, next, tid) => {
         }
 
         if (!tournament) {
-            return res.status(404).json({ message: '赛事不存在' });
+            return res.status(404).json({ message: translateMessage(req, '赛事不存在') });
         }
 
         // 将解析后的 ID 重写到 params，确保后续逻辑正常
@@ -42,7 +47,7 @@ router.param('tid', async (req, res, next, tid) => {
         next();
     } catch (error) {
         console.error('tid 解析失败:', error);
-        res.status(500).json({ message: '服务器错误' });
+        res.status(500).json({ message: translateMessage(req, '服务器错误') });
     }
 });
 
@@ -52,6 +57,9 @@ router.get('/', tournamentController.getTournaments);
 
 // 赛事详情
 router.get('/:tid', tournamentController.getTournament);
+
+// 赛事内容块
+router.get('/:tid/sections', contentController.getSections);
 
 // 队伍列表
 router.get('/:tid/teams', teamController.getTeams);
@@ -87,24 +95,55 @@ router.post('/:tid/team', authMiddleware(), teamController.createTeam);
 // 加入队伍
 router.post('/:tid/team/join', authMiddleware(), teamController.joinTeam);
 
+// 提交队伍
+router.post('/:tid/team/:teamId/submit', authMiddleware(), teamController.submitTeam);
+
+// 修改队伍信息
+router.put('/:tid/team/:teamId/info', authMiddleware(), teamController.updateTeamInfo);
+
+// 转让队长
+router.post('/:tid/team/:teamId/transfer-captain', authMiddleware(), teamController.transferCaptain);
+
+// 重置邀请码
+router.post('/:tid/team/:teamId/reset-invite', authMiddleware(), teamController.resetInviteCode);
+
+// 踢出队员
+router.delete('/:tid/team/:teamId/player/:playerId', authMiddleware(), teamController.kickPlayer);
+
 // 离开队伍
 router.delete('/:tid/team/leave', authMiddleware(), teamController.leaveTeam);
 
 // ========== 管理路由（需要 Staff 权限）==========
 // 创建赛事
-router.post('/', authMiddleware(), tournamentController.createTournament);
+router.post('/', authMiddleware([ROLES.ADMIN]), tournamentController.createTournament);
 
 // 更新赛事
 router.put('/:tid', authMiddleware(), isHost, tournamentController.updateTournament);
 
 // 删除赛事
-router.delete('/:tid', authMiddleware(), isHost, tournamentController.deleteTournament);
+router.delete('/:tid', authMiddleware(), isCreatorHost, tournamentController.deleteTournament);
 
 // 审核队伍
 router.put('/:tid/team/:teamId', authMiddleware(), isHost, teamController.updateTeamStatus);
 
 // 批量通过审核
 router.post('/:tid/team/approve-all', authMiddleware(), isHost, teamController.approveAllTeams);
+
+// 更新选手审查/快照信息
+router.put('/:tid/player/:playerId', authMiddleware(), isHost, teamController.updatePlayer);
+
+// 内容块管理
+router.get('/:tid/sections/manage', authMiddleware(), isHost, contentController.getManageSections);
+router.post('/:tid/sections/preview', authMiddleware(), isHost, contentController.previewMarkdown);
+router.post('/:tid/sections', authMiddleware(), isHost, contentController.createSection);
+router.put('/:tid/sections/:sectionId', authMiddleware(), isHost, contentController.updateSection);
+router.delete('/:tid/sections/:sectionId', authMiddleware(), isHost, contentController.deleteSection);
+
+// 审计日志
+router.get('/:tid/audit-logs', authMiddleware(), isHost, auditController.getAuditLogs);
+
+// 历史赛事补录
+router.post('/:tid/import/teams', authMiddleware(), isHost, historicalImportController.importTeams);
 
 // 添加 Staff
 router.post('/:tid/staff', authMiddleware(), isHost, staffController.addStaff);
@@ -125,8 +164,17 @@ router.delete('/:tid/qualifier/mappool/:mapId', authMiddleware(), isPooler, qual
 // 从 MP 获取成绩
 router.post('/:tid/qualifier/fetch-scores', authMiddleware(), isReferee, qualifierController.fetchQualScoresFromMp);
 
+// 资格赛导入记录
+router.get('/:tid/qualifier/imports', authMiddleware(), isReferee, qualifierController.getQualImports);
+
+// 手动修正资格赛成绩
+router.put('/:tid/qualifier/scores/:scoreId', authMiddleware(), isReferee, qualifierController.updateQualScore);
+
 // 计算排名
 router.post('/:tid/qualifier/calculate-ranking', authMiddleware(), isHost, qualifierController.calculateRanking);
+
+// 锁定资格赛排名
+router.post('/:tid/qualifier/lock', authMiddleware(), isHost, qualifierController.lockQualifierRanking);
 
 // ========== 正赛管理路由 ==========
 // 创建轮次
@@ -167,6 +215,9 @@ router.post('/:tid/referee/:matchId/roll', authMiddleware(), isReferee, refereeC
 
 // 记录 Protect/Ban/Pick
 router.post('/:tid/referee/:matchId/action', authMiddleware(), isReferee, refereeController.recordAction);
+
+// 修改 Protect/Ban/Pick
+router.put('/:tid/referee/:matchId/action/:actionId', authMiddleware(), isReferee, refereeController.updateAction);
 
 // 记录暂停
 router.post('/:tid/referee/:matchId/timeout', authMiddleware(), isReferee, refereeController.recordTimeout);

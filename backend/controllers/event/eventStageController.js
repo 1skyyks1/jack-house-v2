@@ -95,7 +95,7 @@ exports.updateStage = async (req, res) => {
         if (!originalStage) {
             return res.status(404).json({ message: req.t('event.notFound') });
         }
-        await originalStage.update({ map_id, artist, title, mapper, desc })
+        await originalStage.update({ map_id, artist, title, mapper })
         res.status(200).json({ message: req.t('event.updateSuccess') });
     } catch (error) {
         res.status(500).json({ message: req.t('event.serverError') });

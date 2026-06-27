@@ -28,16 +28,32 @@ const TTeam = sequelize.define('TTeam', {
         unique: true,
         comment: '邀请码'
     },
+    avatar: {
+        type: DataTypes.STRING(1024),
+        allowNull: true,
+        comment: '队伍头像，第一版可预留'
+    },
+    is_open: {
+        type: DataTypes.TINYINT,
+        allowNull: false,
+        defaultValue: 0,
+        comment: '是否开放组队'
+    },
     captain_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        comment: '队长user_id'
+        comment: '队长user_id，兼容旧逻辑'
+    },
+    captain_player_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '队长player_id，长期队长关系以此字段为准'
     },
     status: {
         type: DataTypes.TINYINT,
         allowNull: false,
         defaultValue: 0,
-        comment: '0=待审核 1=已通过 2=未通过'
+        comment: '兼容旧逻辑：0=created/pending 1=approved 2=reserved 3=locked'
     },
     qual_mp_id: {
         type: DataTypes.INTEGER,
@@ -53,6 +69,11 @@ const TTeam = sequelize.define('TTeam', {
         type: DataTypes.INTEGER,
         allowNull: true,
         comment: '资格赛总分'
+    },
+    locked_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: '队伍锁定时间'
     },
     created_time: {
         type: DataTypes.DATE,

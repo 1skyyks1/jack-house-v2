@@ -75,7 +75,17 @@ const TQualMappool = sequelize.define('TQualMappool', {
     }
 }, {
     tableName: 't_qual_mappool',
-    timestamps: false
+    timestamps: false,
+    indexes: [
+        {
+            unique: true,
+            fields: ['t_id', 'index']
+        },
+        {
+            unique: true,
+            fields: ['t_id', 'map_id']
+        }
+    ]
 });
 
 module.exports = TQualMappool;

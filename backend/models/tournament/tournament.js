@@ -84,11 +84,31 @@ const Tournament = sequelize.define('Tournament', {
         allowNull: true,
         comment: '资格赛结束时间'
     },
+    qual_locked_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: '资格赛排名锁定时间'
+    },
+    qual_locked_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '锁定资格赛排名的 user_id'
+    },
+    qual_locked_top_n: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '锁定时的晋级名额'
+    },
     status: {
         type: DataTypes.TINYINT,
         allowNull: false,
         defaultValue: 0,
         comment: '0=未开始 1=报名中 2=资格赛 3=正赛 4=已结束'
+    },
+    created_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: '创建者 user_id；creator host 可删除赛事和添加其他 host'
     },
     created_time: {
         type: DataTypes.DATE,
