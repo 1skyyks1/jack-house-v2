@@ -1,0 +1,30 @@
+README.md
+  s_9065e70a1bd058::t_8dffc31315d1d5 20-23,58-63,78,88
+backend/controllers/event/eventStageController.js
+  h_e77e7172ec5536 98
+README_zh.md
+  s_9065e70a1bd058::t_ba60eac37d8144 20-23,58-63,78,88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3d5408c49c3fe2117abd4b391e300a777cdee15f",
+  "prompts": {},
+  "humans": {
+    "h_e77e7172ec5536": {
+      "author": "daiweiyang <daiweiyang.owo@bytedance.com>"
+    }
+  },
+  "sessions": {
+    "s_9065e70a1bd058": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a336951e8fd4d38fac2aa2f",
+        "model": "gpt-5.4__max"
+      },
+      "human_author": "daiweiyang <daiweiyang.owo@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
