@@ -79,6 +79,8 @@ const getCsrfToken = async (req, res) => {
     const cookies = parseCookies(req.headers.cookie || '');
     const csrfToken = cookies[getCsrfCookieName()];
 
+    res.set('Cache-Control', 'no-store');
+
     if (!csrfToken) {
         return res.status(401).json({ message: req.t('authMid.pleaseLogin') });
     }

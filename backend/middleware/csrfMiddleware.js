@@ -1,9 +1,10 @@
 const { getCookieName, getCsrfCookieName, parseCookies } = require('../utils/authCookie');
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const EXEMPT_PATHS = new Set(['/auth/login', '/auth/register']);
 
 const csrfMiddleware = (req, res, next) => {
-    if (SAFE_METHODS.has(req.method)) {
+    if (SAFE_METHODS.has(req.method) || EXEMPT_PATHS.has(req.path)) {
         return next();
     }
 

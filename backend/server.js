@@ -73,7 +73,7 @@ app.use(cors({
         return callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // 允许的 HTTP 方法
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token'], // 允许的请求头
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Accept-Language', 'Cache-Control'], // 允许的请求头
     credentials: true, // 允许发送 Cookie
 })); // 启用 CORS
 
