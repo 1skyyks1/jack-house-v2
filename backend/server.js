@@ -51,7 +51,6 @@ const corsOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '')
     .filter(Boolean);
 const isProduction = process.env.NODE_ENV === 'production';
 const allowLocalhostCors = !isProduction && process.env.CORS_ALLOW_LOCALHOST !== 'false';
-const allowLegacyBearer = process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false';
 
 if (isProduction && corsOrigins.length === 0) {
     throw new Error('CORS_ORIGIN or FRONTEND_URL must be set in production when credentials are enabled');
@@ -74,7 +73,7 @@ app.use(cors({
         return callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // 允许的 HTTP 方法
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token', ...(allowLegacyBearer ? ['Authorization'] : [])], // 允许的请求头
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token'], // 允许的请求头
     credentials: true, // 允许发送 Cookie
 })); // 启用 CORS
 

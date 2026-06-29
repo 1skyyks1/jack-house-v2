@@ -44,9 +44,6 @@ const authCallback = async (req, res) => {
         setAuthCookie(res, token);
 
         const redirectUrl = new URL('/oauth/complete', process.env.FRONTEND_URL);
-        if (process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false') {
-            redirectUrl.searchParams.set('token', token);
-        }
         redirectUrl.searchParams.set('userId', user.user_id);
 
         // 更新用户名和头像

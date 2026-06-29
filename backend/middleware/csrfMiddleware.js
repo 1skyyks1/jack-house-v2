@@ -1,14 +1,9 @@
-const { getCookieName, getCsrfCookieName, isLegacyBearerEnabled, parseCookies } = require('../utils/authCookie');
+const { getCookieName, getCsrfCookieName, parseCookies } = require('../utils/authCookie');
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const csrfMiddleware = (req, res, next) => {
     if (SAFE_METHODS.has(req.method)) {
-        return next();
-    }
-
-    const authHeader = req.headers.authorization;
-    if (isLegacyBearerEnabled() && authHeader && authHeader.startsWith('Bearer ')) {
         return next();
     }
 

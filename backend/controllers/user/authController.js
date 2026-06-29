@@ -1,10 +1,9 @@
 const User = require('../../models/user/user');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const { createUserRecord } = require('./userController');
 const { Op } = require('sequelize');
 const bcrypt = require('bcryptjs');
-const { clearAuthCookie, setAuthCookie } = require('../../utils/authCookie');
+const { clearAuthCookie, getCsrfCookieName, parseCookies, setAuthCookie } = require('../../utils/authCookie');
 
 // 邮箱注册
 const register = async (req, res) => {
@@ -30,12 +29,7 @@ const register = async (req, res) => {
         const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
         setAuthCookie(res, token);
 
-        const data = { message: req.t('auth.registerSuccess'), userId: user.user_id };
-        if (process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false') {
-            data.token = token;
-        }
-
-        res.status(201).json({ data });
+        res.status(201).json({ data: { message: req.t('auth.registerSuccess'), userId: user.user_id } });
     } catch (error) {
         res.status(500).json({ message: req.t('auth.registerFailed') });
     }
@@ -70,12 +64,7 @@ const login = async (req, res) => {
         const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
         setAuthCookie(res, token);
 
-        const data = { message: req.t('auth.loginSuccess'), userId: user.user_id };
-        if (process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false') {
-            data.token = token;
-        }
-
-        res.json({ data });
+        res.json({ data: { message: req.t('auth.loginSuccess'), userId: user.user_id } });
     } catch (error) {
         res.status(500).json({ message: req.t('auth.loginFailed') });
     }
@@ -86,7 +75,19 @@ const logout = async (req, res) => {
     res.json({ data: { message: req.t('auth.logoutSuccess') } });
 };
 
+const getCsrfToken = async (req, res) => {
+    const cookies = parseCookies(req.headers.cookie || '');
+    const csrfToken = cookies[getCsrfCookieName()];
+
+    if (!csrfToken) {
+        return res.status(401).json({ message: req.t('authMid.pleaseLogin') });
+    }
+
+    res.json({ data: { csrfToken } });
+};
+
 module.exports = {
+    getCsrfToken,
     register,
     login,
     logout

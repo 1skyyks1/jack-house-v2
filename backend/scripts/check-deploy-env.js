@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const args = new Set(process.argv.slice(2));
 const profileArg = process.argv.find((arg) => arg.startsWith('--profile='));
-const profile = profileArg ? profileArg.split('=')[1] : 'default';
+const profile = profileArg ? profileArg.split('=')[1] : 'v3';
 
 const errors = [];
 const warnings = [];
@@ -11,7 +11,6 @@ const addError = (message) => errors.push(message);
 const addWarning = (message) => warnings.push(message);
 
 const boolEnv = (name) => process.env[name] === 'true';
-const isDisabled = (name) => process.env[name] === 'false';
 
 const getCorsOrigins = () => (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '')
     .split(',')
@@ -44,9 +43,15 @@ const requireEnv = (name, message = `${name} is required`) => {
     }
 };
 
+const validateProfile = () => {
+    if (profile !== 'v3') {
+        addError(`Unsupported deploy profile: ${profile}. Use --profile=v3 or omit --profile.`);
+    }
+};
+
 const validateRuntime = () => {
-    if (profile === 'legacy-v3' && process.env.NODE_ENV !== 'production') {
-        addWarning('legacy-v3 profile is intended for online deployment; set NODE_ENV=production in the process manager');
+    if (profile === 'v3' && process.env.NODE_ENV !== 'production') {
+        addWarning('v3 profile is intended for online deployment; set NODE_ENV=production in the process manager');
     }
 };
 
@@ -81,16 +86,16 @@ const validateCors = () => {
         }
     });
 
-    if (profile === 'legacy-v3') {
+    if (profile === 'v3') {
         const hasLocalhost = origins.some((origin) => origin === 'http://localhost:5173' || origin === 'http://127.0.0.1:5173');
         const hasProductionOrigin = origins.some((origin) => !isLocalOrigin(origin));
 
-        if (!hasLocalhost) {
-            addError('legacy-v3 profile requires CORS_ORIGIN to include http://localhost:5173 or http://127.0.0.1:5173 for local V3 testing');
+        if (args.has('--require-local-v3') && !hasLocalhost) {
+            addError('v3 profile with --require-local-v3 requires CORS_ORIGIN to include http://localhost:5173 or http://127.0.0.1:5173');
         }
 
         if (!hasProductionOrigin) {
-            addError('legacy-v3 profile requires at least one non-local production frontend origin in CORS_ORIGIN');
+            addError('v3 profile requires at least one non-local production frontend origin in CORS_ORIGIN');
         }
     }
 };
@@ -105,13 +110,9 @@ const validateCookies = () => {
         addError('AUTH_COOKIE_SECURE=true is required when AUTH_COOKIE_SAME_SITE=none');
     }
 
-    if (profile === 'legacy-v3') {
-        if (isDisabled('AUTH_LEGACY_BEARER_ENABLED')) {
-            addError('legacy-v3 profile requires AUTH_LEGACY_BEARER_ENABLED=true while the old frontend is still deployed');
-        }
-
+    if (profile === 'v3' && args.has('--require-local-v3')) {
         if (sameSite !== 'none' || !boolEnv('AUTH_COOKIE_SECURE')) {
-            addError('legacy-v3 profile requires AUTH_COOKIE_SAME_SITE=none and AUTH_COOKIE_SECURE=true for local V3 -> online backend cookie login');
+            addError('v3 profile with --require-local-v3 requires AUTH_COOKIE_SAME_SITE=none and AUTH_COOKIE_SECURE=true for local V3 -> online backend cookie login');
         }
     }
 };
@@ -164,6 +165,7 @@ const validateUploadLimits = () => {
     }
 };
 
+validateProfile();
 validateRuntime();
 validateDatabase();
 validateJwt();
@@ -185,7 +187,6 @@ console.log(`Deploy environment check passed (${profile} profile).`);
 
 if (args.has('--print-summary')) {
     console.log(`CORS origins: ${getCorsOrigins().join(', ')}`);
-    console.log(`AUTH_LEGACY_BEARER_ENABLED: ${process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false'}`);
     console.log(`AUTH_COOKIE_SAME_SITE: ${String(process.env.AUTH_COOKIE_SAME_SITE || 'lax').toLowerCase()}`);
     console.log(`AUTH_COOKIE_SECURE: ${boolEnv('AUTH_COOKIE_SECURE')}`);
     console.log(`NODE_ENV: ${process.env.NODE_ENV || '(not set)'}`);

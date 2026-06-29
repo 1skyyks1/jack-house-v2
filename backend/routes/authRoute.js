@@ -18,4 +18,7 @@ router.post('/login', AuthController.login);
 // 退出登录并清理 httpOnly cookie
 router.post('/logout', AuthController.logout);
 
+// 读取当前会话 CSRF token，供跨站本地 V3 调试时补写请求 header
+router.get('/csrf', AuthController.getCsrfToken);
+
 module.exports = router;

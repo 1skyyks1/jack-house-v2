@@ -6,7 +6,6 @@ const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const getCookieName = () => process.env.AUTH_COOKIE_NAME || DEFAULT_COOKIE_NAME;
 const getCsrfCookieName = () => process.env.CSRF_COOKIE_NAME || DEFAULT_CSRF_COOKIE_NAME;
-const isLegacyBearerEnabled = () => process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false';
 const ALLOWED_SAME_SITE_VALUES = new Set(['lax', 'strict', 'none']);
 
 const isSecureCookie = () => {
@@ -74,13 +73,6 @@ const clearAuthCookie = (res) => {
 };
 
 const getAuthTokenFromRequest = (req) => {
-    if (isLegacyBearerEnabled()) {
-        const authHeader = req.headers.authorization;
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-            return authHeader.split(' ')[1];
-        }
-    }
-
     const cookies = parseCookies(req.headers.cookie || '');
     return cookies[getCookieName()];
 };
@@ -91,7 +83,6 @@ module.exports = {
     getCsrfCookieName,
     getAuthTokenFromRequest,
     getCookieOptions,
-    isLegacyBearerEnabled,
     parseCookies,
     setAuthCookie,
 };
