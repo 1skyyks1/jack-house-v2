@@ -44,6 +44,18 @@ const requireEnv = (name, message = `${name} is required`) => {
     }
 };
 
+const validateRuntime = () => {
+    if (profile === 'legacy-v3' && process.env.NODE_ENV !== 'production') {
+        addWarning('legacy-v3 profile is intended for online deployment; set NODE_ENV=production in the process manager');
+    }
+};
+
+const validateDatabase = () => {
+    requireEnv('DB_HOST');
+    requireEnv('DB_NAME');
+    requireEnv('DB_USER');
+};
+
 const validateJwt = () => {
     const secret = process.env.JWT_SECRET;
     if (!secret || secret === 'replace-with-a-long-random-secret') {
@@ -152,6 +164,8 @@ const validateUploadLimits = () => {
     }
 };
 
+validateRuntime();
+validateDatabase();
 validateJwt();
 validateCors();
 validateCookies();
@@ -174,4 +188,5 @@ if (args.has('--print-summary')) {
     console.log(`AUTH_LEGACY_BEARER_ENABLED: ${process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false'}`);
     console.log(`AUTH_COOKIE_SAME_SITE: ${String(process.env.AUTH_COOKIE_SAME_SITE || 'lax').toLowerCase()}`);
     console.log(`AUTH_COOKIE_SECURE: ${boolEnv('AUTH_COOKIE_SECURE')}`);
+    console.log(`NODE_ENV: ${process.env.NODE_ENV || '(not set)'}`);
 }
