@@ -1,9 +1,20 @@
 const { HomeImg } = require('../models/index')
 const sequelize = require('../config/db')
 const { Op } = require('sequelize');
-const mc = require('../config/minio')
 const fs = require('fs')
 const upload = require('../config/multer')
+const { handleUpload } = require('../middleware/uploadErrorHandler')
+const storage = require('../services/storage')
+const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../utils/imageOptimizer')
+
+const HOMEIMG_STORAGE_SCOPE = 'HOMEIMG';
+const getHomeImgObjectName = (img) => img.object_key || img.minio_img_name;
+const getHomeImgProvider = (img) => img.storage_provider || 'minio';
+const getHomeImgBucket = () => storage.getBucketName(
+    HOMEIMG_STORAGE_SCOPE,
+    ['MINIO_HOMEIMG_BUCKET'],
+    storage.getProviderName(HOMEIMG_STORAGE_SCOPE) === 'github' ? 'home-img' : null
+);
 
 // 获取头图列表（管理后台用）
 exports.getAllHomeImg = async (req, res) => {
@@ -54,10 +65,21 @@ exports.getHomeImg = async (req, res) => {
 
         const homeImgsPreSigned = await Promise.all(
             homeImgs.map(async (img) => {
-                const signedUrl = await preSign(img.minio_img_name);
+                if (img.public_url || img.download_url) {
+                    return {
+                        ...img.toJSON(),
+                        signedUrl: img.public_url || img.download_url
+                    }
+                }
+
+                const signedUrl = await storage.getDownloadUrl(HOMEIMG_STORAGE_SCOPE, {
+                    provider: getHomeImgProvider(img),
+                    bucket: getHomeImgBucket(),
+                    objectName: getHomeImgObjectName(img),
+                });
                 return{
                     ...img.toJSON(),
-                    signedUrl
+                    signedUrl: img.public_url || img.download_url || signedUrl
                 }
             })
         )
@@ -70,7 +92,7 @@ exports.getHomeImg = async (req, res) => {
 
 // 上传头图
 exports.uploadHomeImg = [
-    upload.imageUpload.single('file'),
+    handleUpload(upload.imageUpload.single('file')),
     async (req, res) => {
         const { redirect_url, sort_order, description } = req.body;
         const user_id = req.user.user_id;
@@ -82,20 +104,30 @@ exports.uploadHomeImg = [
 
         const filePath = file.path;
         const fileName = file.filename;
-        const fileUrl = `${process.env.MINIO_HOMEIMG_BUCKET}/${fileName}`;
 
         try {
-            // 上传文件到 MinIO
-            await mc.fPutObject(process.env.MINIO_HOMEIMG_BUCKET, fileName, filePath, {
-                'Content-Type': file.mimetype,
+            const optimized = await optimizeImageFile(file, { convertToWebp: true });
+            const checksum = await hashFile(filePath);
+            const objectName = buildContentHashObjectName(checksum, optimized.mimeType, fileName);
+            const uploaded = await storage.uploadFile(HOMEIMG_STORAGE_SCOPE, {
+                bucket: getHomeImgBucket(),
+                objectName,
+                filePath,
+                mimeType: optimized.mimeType,
+                size: optimized.size,
             });
 
             // 将文件信息保存到数据库
             const homeImg = await HomeImg.create({
                 user_id,
-                url: fileUrl,
+                url: uploaded.url,
+                storage_provider: uploaded.provider,
+                object_key: uploaded.objectKey,
+                public_url: uploaded.publicUrl,
+                download_url: uploaded.downloadUrl,
+                mime_type: uploaded.mimeType,
                 redirect_url,
-                minio_img_name: fileName,
+                minio_img_name: objectName,
                 sort_order,
                 description
             });
@@ -113,12 +145,6 @@ exports.uploadHomeImg = [
         }
     }
 ];
-
-// 处理头图预签名
-const preSign = async (name) => {
-    const expires = 24 * 60 * 60;
-    return await mc.presignedUrl('GET', process.env.MINIO_HOMEIMG_BUCKET, name, expires)
-}
 
 // 更新头图信息
 exports.updateHomeImg = async (req, res) => {
@@ -144,7 +170,11 @@ exports.deleteHomeImg = async (req, res) => {
         if (!img) {
             return res.status(404).json({ message: req.t('homeImg.notFound') });
         }
-        await mc.removeObject(process.env.MINIO_HOMEIMG_BUCKET, img.minio_img_name);
+        await storage.deleteFile(HOMEIMG_STORAGE_SCOPE, {
+            provider: getHomeImgProvider(img),
+            bucket: getHomeImgBucket(),
+            objectName: getHomeImgObjectName(img),
+        });
         await img.destroy();
         res.status(200).json({ message: req.t('homeImg.deleteSuccess') })
     } catch (error) {

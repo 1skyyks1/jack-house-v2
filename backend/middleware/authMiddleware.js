@@ -1,13 +1,14 @@
 const jwt = require('jsonwebtoken');
 const { User } = require('../models/index');
+const { getAuthTokenFromRequest } = require('../utils/authCookie');
 
 const checkAuth = (roles = []) => {
     return async (req, res, next) => {
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        const token = getAuthTokenFromRequest(req);
+        if (!token) {
             return res.status(401).json({ message: req.t('authMid.pleaseLogin') });
         }
-        const token = authHeader.split(' ')[1];
+
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -20,7 +21,7 @@ const checkAuth = (roles = []) => {
             }
             if (roles.length > 0) {
                 const userRole = user.role;
-                if (!userRole || !roles.includes(userRole)) {
+                if (userRole === undefined || userRole === null || !roles.includes(userRole)) {
                     return res.status(403).json({ message: req.t('authMid.permissionDenied') })
                 }
             }
@@ -33,6 +34,27 @@ const checkAuth = (roles = []) => {
             return res.status(401).json({ message: req.t('auth.pleaseLogin') });
         }
     }
+}
+
+checkAuth.optional = async (req, res, next) => {
+    const token = getAuthTokenFromRequest(req);
+    if (!token) {
+        return next();
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findByPk(decoded.userId, {
+            attributes: { exclude: ['password'] }
+        });
+        if (user) {
+            req.user = user;
+        }
+    } catch (error) {
+        req.user = undefined;
+    }
+
+    next();
 }
 
 module.exports = checkAuth;

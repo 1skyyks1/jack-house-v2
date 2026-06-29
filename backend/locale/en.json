@@ -10,6 +10,7 @@
     "userNotFound": "User not found",
     "wrongPassword": "Incorrect password",
     "loginSuccess": "Login successful",
+    "logoutSuccess": "Logout successful",
     "loginFailed": "Login failed"
   },
   "dashboard": {
@@ -92,7 +93,14 @@
     "deleteSuccess": "Deleted successfully",
     "deleteFailed": "Delete failed",
     "deleteForbidden": "Permission denied to delete",
-    "deleteNotPending": "You can't delete a reviewed submission."
+    "deleteNotPending": "You can't delete a reviewed submission.",
+    "invalidCreatePayload": "Invalid post file record payload",
+    "invalidStorageProvider": "Invalid storage provider",
+    "invalidUrl": "Invalid post file URL",
+    "invalidChecksum": "Invalid file checksum",
+    "invalidFileType": "This file type is not allowed",
+    "fileSizeLimit": "Submission file exceeds the size limit",
+    "totalSizeLimit": "Submission files exceed the total size limit"
   },
   "tag": {
     "getFailed": "Failed to retrieve tag list",
@@ -118,6 +126,7 @@
     "pleaseLogin": "Please login",
     "userNotFound": "User not found",
     "permissionDenied": "Permission denied",
+    "csrfDenied": "CSRF check failed",
     "tokenExpired": "Authentication failed: Token expired",
     "tokenInvalid": "Authentication failed: Invalid token"
   },
@@ -163,6 +172,15 @@
     "grantSuccess": "Badge successfully granted to user(s)",
     "grantFailed": "Failed to grant badge",
     "notFound": "The specified badge was not found"
+  },
+  "upload": {
+    "noFile": "No file uploaded",
+    "bucketMissing": "Upload bucket is not configured",
+    "failed": "Upload failed",
+    "notFound": "File not found",
+    "fileTooLarge": "Uploaded file exceeds the size limit",
+    "invalidImageType": "Only image files are allowed",
+    "unexpectedFile": "Unexpected upload field"
   },
   "common": {
     "serverError": "Internal server error"

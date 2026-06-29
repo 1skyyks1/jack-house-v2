@@ -1,5 +1,5 @@
 const { PackComment, Pack, User } = require('../../models');
-const ROLES = require("../../config/roles");
+const { ROLES } = require("../../config/roles");
 
 // 在图包下发表评论
 exports.addComment = async (req, res) => {

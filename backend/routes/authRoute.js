@@ -15,4 +15,7 @@ router.post('/register', AuthController.register);
 // 用户名/邮箱密码登录
 router.post('/login', AuthController.login);
 
+// 退出登录并清理 httpOnly cookie
+router.post('/logout', AuthController.logout);
+
 module.exports = router;

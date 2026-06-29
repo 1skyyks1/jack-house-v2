@@ -1,5 +1,5 @@
 const { PostComment, User} = require('../../models');
-const ROLES = require('../../config/roles');
+const { ROLES } = require('../../config/roles');
 
 // 获取指定帖子的所有评论
 exports.getCommentsByPostId = async (req, res) => {

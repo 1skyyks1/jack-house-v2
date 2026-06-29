@@ -10,6 +10,8 @@ const Tag = require('./pack/tag');
 const PackComment = require('./pack/packComment');
 const Badge = require('./user/badge');
 const Role = require('./user/role');
+const RichTextAsset = require('./richTextAsset');
+const RichTextAssetReference = require('./richTextAssetReference');
 
 const Event = require('../models/event/event');
 const EventStage = require('../models/event/eventStage');
@@ -27,6 +29,9 @@ PostFile.belongsTo(Post, { foreignKey: 'post_id' });
 PostFile.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 PostTranslation.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
+
+RichTextAsset.hasMany(RichTextAssetReference, { foreignKey: 'rich_text_asset_id', onDelete: 'CASCADE', as: 'references' });
+RichTextAssetReference.belongsTo(RichTextAsset, { foreignKey: 'rich_text_asset_id', as: 'asset' });
 
 User.hasMany(Post, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 User.hasMany(PostFile, { foreignKey: 'user_id', onDelete: 'CASCADE' });
@@ -107,5 +112,7 @@ module.exports = {
     PackComment,
     Event,
     EventStage,
-    EventScore
+    EventScore,
+    RichTextAsset,
+    RichTextAssetReference
 };

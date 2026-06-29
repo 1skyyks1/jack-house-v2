@@ -16,8 +16,8 @@ router.get('/user/:user_id', postFileController.getFileByUserId);
 // 上传投稿
 router.post('/upload/:post_id', checkAuth(), postFileController.uploadFile);
 
-// 创建投稿
-router.post('/', checkAuth(), postFileController.createPostFile);
+// 创建投稿记录（后台兼容入口，普通用户投稿必须走 /upload/:post_id）
+router.post('/', checkAuth([ROLES.ORG, ROLES.ADMIN]), postFileController.createPostFile);
 
 // 更新投稿备注
 router.put('/:file_id', checkAuth(), postFileController.updatePostFile);

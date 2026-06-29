@@ -24,6 +24,31 @@ const HomeImg = sequelize.define('HomeImg', {
         allowNull: false,
         comment: 'minio侧文件名'
     },
+    storage_provider: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        comment: '存储 provider',
+    },
+    object_key: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: '存储对象 key',
+    },
+    public_url: {
+        type: DataTypes.STRING(1024),
+        allowNull: true,
+        comment: '公开访问 URL',
+    },
+    download_url: {
+        type: DataTypes.STRING(1024),
+        allowNull: true,
+        comment: '下载 URL',
+    },
+    mime_type: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: 'MIME 类型',
+    },
     redirect_url: {
         type: DataTypes.STRING(255),
         allowNull: true,

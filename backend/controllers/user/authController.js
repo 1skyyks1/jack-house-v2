@@ -1,9 +1,10 @@
 const User = require('../../models/user/user');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { createUser } = require('./userController');
+const { createUserRecord } = require('./userController');
 const { Op } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const { clearAuthCookie, setAuthCookie } = require('../../utils/authCookie');
 
 // 邮箱注册
 const register = async (req, res) => {
@@ -16,21 +17,25 @@ const register = async (req, res) => {
             return res.status(400).json({ message: req.t('auth.emailRegistered') });
         }
 
-        // 调用 createUser 创建用户
-        const user = await createUser({
-            body: {
-                user_name: username,
-                email,
-                password,
-                role: 0, // 默认角色
-                status: 0, // 默认状态
-            },
-        }, res);
+        // 邮箱注册是预留能力，创建逻辑复用用户内部 helper。
+        const user = await createUserRecord({
+            user_name: username,
+            email,
+            password,
+            role: 0,
+            status: 0,
+        });
 
         // 生成 JWT
         const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        setAuthCookie(res, token);
 
-        res.status(201).json({ data: { message: req.t('auth.registerSuccess'), token, userId: user.user_id } });
+        const data = { message: req.t('auth.registerSuccess'), userId: user.user_id };
+        if (process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false') {
+            data.token = token;
+        }
+
+        res.status(201).json({ data });
     } catch (error) {
         res.status(500).json({ message: req.t('auth.registerFailed') });
     }
@@ -63,14 +68,26 @@ const login = async (req, res) => {
 
         // 生成 JWT
         const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        setAuthCookie(res, token);
 
-        res.json({ data: { message: req.t('auth.loginSuccess'), token, userId: user.user_id } });
+        const data = { message: req.t('auth.loginSuccess'), userId: user.user_id };
+        if (process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false') {
+            data.token = token;
+        }
+
+        res.json({ data });
     } catch (error) {
         res.status(500).json({ message: req.t('auth.loginFailed') });
     }
 };
 
+const logout = async (req, res) => {
+    clearAuthCookie(res);
+    res.json({ data: { message: req.t('auth.logoutSuccess') } });
+};
+
 module.exports = {
     register,
-    login
+    login,
+    logout
 };

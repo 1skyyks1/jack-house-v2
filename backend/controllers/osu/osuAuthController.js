@@ -1,6 +1,7 @@
 const User = require('../../models/user/user');
 const jwt = require('jsonwebtoken');
 const osu = require("osu-api-v2-js");
+const { setAuthCookie } = require('../../utils/authCookie');
 
 const CLIENT_ID = Number(process.env.OSU_CLIENT_ID);
 const CLIENT_SECRET = process.env.OSU_CLIENT_SECRET;
@@ -40,9 +41,12 @@ const authCallback = async (req, res) => {
 
         const token = jwt.sign({ userId: user.user_id, role: user.role },
             process.env.JWT_SECRET, { expiresIn: '7d' });
+        setAuthCookie(res, token);
 
         const redirectUrl = new URL('/oauth/complete', process.env.FRONTEND_URL);
-        redirectUrl.searchParams.set('token', token);
+        if (process.env.AUTH_LEGACY_BEARER_ENABLED !== 'false') {
+            redirectUrl.searchParams.set('token', token);
+        }
         redirectUrl.searchParams.set('userId', user.user_id);
 
         // 更新用户名和头像

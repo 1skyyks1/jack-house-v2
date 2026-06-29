@@ -1,12 +1,23 @@
-const { Badge, HomeImg} = require('../../models');
+const { Badge } = require('../../models');
 const upload = require('../../config/multer')
-const mc = require('../../config/minio')
+const { handleUpload } = require('../../middleware/uploadErrorHandler')
 const fs = require('fs')
 const sequelize = require('../../config/db')
+const storage = require('../../services/storage')
+const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer')
+
+const BADGES_STORAGE_SCOPE = 'BADGES';
+const getBadgeObjectName = (badge) => badge.object_key || badge.minio_img_name;
+const getBadgeProvider = (badge) => badge.storage_provider || 'minio';
+const getBadgesBucket = () => storage.getBucketName(
+    BADGES_STORAGE_SCOPE,
+    ['MINIO_BADGES_BUCKET'],
+    storage.getProviderName(BADGES_STORAGE_SCOPE) === 'github' ? 'badges' : null
+);
 
 // 上传牌子
 exports.uploadBadge = [
-    upload.badgeUpload.single('file'),
+    handleUpload(upload.badgeUpload.single('file')),
     async (req, res) => {
         const { name, redirect_url } = req.body;
         const file = req.file;
@@ -17,18 +28,30 @@ exports.uploadBadge = [
 
         const filePath = file.path;
         const fileName = file.filename;
-        const fileUrl = `${process.env.MINIO_BADGES_BUCKET}/${fileName}`;
 
         try {
-            await mc.fPutObject(process.env.MINIO_BADGES_BUCKET, fileName, filePath, {
-                'Content-Type': file.mimetype,
-            })
+            const optimized = await optimizeImageFile(file, { convertToWebp: true });
+            const checksum = await hashFile(filePath);
+            const objectName = buildContentHashObjectName(checksum, optimized.mimeType, fileName);
+            const uploaded = await storage.uploadFile(BADGES_STORAGE_SCOPE, {
+                bucket: getBadgesBucket(),
+                objectName,
+                filePath,
+                mimeType: optimized.mimeType,
+                size: optimized.size,
+            });
 
             await Badge.create({
                 name: name,
-                url: fileUrl,
+                url: uploaded.url,
                 redirect_url: redirect_url,
-                minio_img_name: fileName,
+                minio_img_name: uploaded.objectName,
+                storage_provider: uploaded.provider,
+                object_key: uploaded.objectKey,
+                public_url: uploaded.publicUrl,
+                download_url: uploaded.downloadUrl,
+                mime_type: uploaded.mimeType,
+                checksum,
             });
 
             fs.unlinkSync(filePath);
@@ -45,12 +68,6 @@ exports.uploadBadge = [
     }
 ]
 
-// 处理badge预签名
-const preSign = async (name) => {
-    const expires = 24 * 60 * 60;
-    return await mc.presignedUrl('GET', process.env.MINIO_BADGES_BUCKET, name, expires)
-}
-
 // 获取牌子列表（管理系统用）
 exports.getAllBadges = async (req, res) => {
     const { page, pageSize } = req.query;
@@ -65,7 +82,11 @@ exports.getAllBadges = async (req, res) => {
         });
 
         const signBadge = rows.map(async (badge) => {
-            const signedUrl = await preSign(badge.minio_img_name);
+            const signedUrl = badge.public_url || badge.download_url || await storage.getDownloadUrl(BADGES_STORAGE_SCOPE, {
+                provider: getBadgeProvider(badge),
+                bucket: getBadgesBucket(),
+                objectName: getBadgeObjectName(badge),
+            });
             const badgeData = badge.toJSON();
             delete badgeData.minio_img_name;
             badgeData.signedUrl = signedUrl;
@@ -117,6 +138,11 @@ exports.deleteBadge = async (req, res) => {
         if (!badge) {
             return res.status(404).json({ message: req.t('badge.notFound') });
         }
+        await storage.deleteFile(BADGES_STORAGE_SCOPE, {
+            provider: getBadgeProvider(badge),
+            bucket: getBadgesBucket(),
+            objectName: getBadgeObjectName(badge),
+        });
         await badge.destroy();
         res.status(200).json({ message: req.t('badge.deleteSuccess') });
     } catch (err) {

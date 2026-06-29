@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
+    "check:deploy": "node scripts/check-deploy-env.js",
+    "check:secrets": "node scripts/check-secrets.js",
+    "backfill:rich-text-assets": "node scripts/backfill-rich-text-assets.js",
+    "cleanup:rich-text-assets": "node scripts/cleanup-rich-text-assets.js",
+    "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
+    "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -29,6 +35,7 @@
     "node-fetch": "^2.7.0",
     "osu-api-v2-js": "^2.1.0",
     "sanitize-html": "^2.17.5",
-    "sequelize": "^6.37.7"
+    "sequelize": "^6.37.7",
+    "sharp": "^0.35.2"
   }
 }

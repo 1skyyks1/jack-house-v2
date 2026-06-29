@@ -1,7 +1,9 @@
 const { Post, PostTranslation, User } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
-const ROLES = require("../../config/roles");
+const { ROLES } = require("../../config/roles");
+const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
+const { syncRichTextAssetReferences } = require('../../services/richTextAssetService');
 // const { addFolder, getAuthCode } = require('../../utils/pan');
 
 // 获取所有帖子
@@ -289,12 +291,19 @@ exports.createPost = async (req, res) => {
         }, { transaction: t });
 
         for(const { language, title, content } of translations){
-            await PostTranslation.create({
+            const sanitizedContent = sanitizeRichTextHtml(content);
+            const translation = await PostTranslation.create({
                 post_id: newPost.post_id,
                 language,
                 title,
-                content,
+                content: sanitizedContent,
             },{ transaction: t });
+            await syncRichTextAssetReferences({
+                contentType: 'post_translation',
+                contentId: translation.post_translation_id,
+                html: sanitizedContent,
+                transaction: t,
+            });
         }
 
         await t.commit();
@@ -348,17 +357,32 @@ exports.updatePost = async (req, res) => {
 
                         if (existingTranslation) {
                             // 更新已有的翻译
+                            const hasContent = content !== undefined && content !== null;
+                            const sanitizedContent = hasContent ? sanitizeRichTextHtml(content) : existingTranslation.content;
                             existingTranslation.title = title || existingTranslation.title;
-                            existingTranslation.content = content || existingTranslation.content;
+                            existingTranslation.content = sanitizedContent;
                             await existingTranslation.save();
+                            if (hasContent) {
+                                await syncRichTextAssetReferences({
+                                    contentType: 'post_translation',
+                                    contentId: existingTranslation.post_translation_id,
+                                    html: sanitizedContent,
+                                });
+                            }
                             translationModified = true;
                         } else {
                             // 如果没有找到该语言的翻译，创建新的翻译记录
-                            await PostTranslation.create({
+                            const sanitizedContent = sanitizeRichTextHtml(content);
+                            const translation = await PostTranslation.create({
                                 post_id,
                                 language,
                                 title,
-                                content
+                                content: sanitizedContent
+                            });
+                            await syncRichTextAssetReferences({
+                                contentType: 'post_translation',
+                                contentId: translation.post_translation_id,
+                                html: sanitizedContent,
                             });
                             translationModified = true;
                         }

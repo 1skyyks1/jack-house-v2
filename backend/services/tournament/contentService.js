@@ -1,7 +1,8 @@
 const { TSection, Tournament } = require('../../models/tournament');
 const auditService = require('./auditService');
 const MarkdownIt = require('markdown-it');
-const sanitizeHtml = require('sanitize-html');
+const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
+const { syncRichTextAssetReferences } = require('../richTextAssetService');
 
 const ALLOWED_FORMATS = new Set(['markdown', 'html']);
 const ALLOWED_TYPES = new Set(['rules', 'description', 'prize', 'faq']);
@@ -31,37 +32,7 @@ markdown.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
     return defaultHeadingOpen(tokens, idx, options, env, self);
 };
 
-const sanitizeContentHtml = (html = '') => sanitizeHtml(String(html), {
-    allowedTags: [
-        'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'hr', 'img', 'li', 'ol', 'p', 'pre', 's', 'span', 'strong', 'table', 'tbody',
-        'td', 'th', 'thead', 'tr', 'ul'
-    ],
-    allowedAttributes: {
-        a: ['href', 'name', 'target', 'rel'],
-        code: ['class'],
-        h1: ['id'],
-        h2: ['id'],
-        h3: ['id'],
-        h4: ['id'],
-        h5: ['id'],
-        h6: ['id'],
-        img: ['alt', 'height', 'src', 'title', 'width'],
-        span: ['class'],
-        td: ['align', 'colspan', 'rowspan'],
-        th: ['align', 'colspan', 'rowspan']
-    },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    allowedSchemesByTag: {
-        img: ['http', 'https']
-    },
-    transformTags: {
-        a: sanitizeHtml.simpleTransform('a', {
-            rel: 'noopener noreferrer',
-            target: '_blank'
-        })
-    }
-});
+const sanitizeContentHtml = sanitizeRichTextHtml;
 
 const markdownToHtml = (source = '') => sanitizeContentHtml(markdown.render(String(source)));
 
@@ -143,6 +114,11 @@ const createSection = async (tid, body, userId) => {
         t_id: tid,
         updated_by: userId
     });
+    await syncRichTextAssetReferences({
+        contentType: 't_section',
+        contentId: section.id,
+        html: section.content_html,
+    });
     await auditService.writeAuditLog({
         t_id: tid,
         entity_type: 'section',
@@ -177,6 +153,11 @@ const updateSection = async (tid, sectionId, body, userId) => {
         ...payload,
         updated_by: userId
     });
+    await syncRichTextAssetReferences({
+        contentType: 't_section',
+        contentId: section.id,
+        html: section.content_html,
+    });
     await auditService.writeAuditLog({
         t_id: tid,
         entity_type: 'section',
@@ -198,6 +179,11 @@ const deleteSection = async (tid, sectionId, userId) => {
         throw error;
     }
     const oldValue = auditService.pickModelValues(section);
+    await syncRichTextAssetReferences({
+        contentType: 't_section',
+        contentId: section.id,
+        html: '',
+    });
     await section.destroy();
     await auditService.writeAuditLog({
         t_id: tid,

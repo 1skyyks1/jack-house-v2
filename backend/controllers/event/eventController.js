@@ -1,6 +1,8 @@
 const { User, Event, EventStage, EventScore } = require('../../models/index');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
+const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
+const { syncRichTextAssetReferences } = require('../../services/richTextAssetService');
 
 // 获取活动列表，isActive=true筛选出正在进行的
 exports.getEvents = async (req, res) => {
@@ -105,11 +107,17 @@ exports.createEvent = async (req, res) => {
     }
 
     try {
+        const sanitizedDesc = sanitizeRichTextHtml(desc);
         const event = await Event.create({
             name,
-            desc,
+            desc: sanitizedDesc,
             start: startDate,
             end: endDate
+        });
+        await syncRichTextAssetReferences({
+            contentType: 'event',
+            contentId: event.id,
+            html: sanitizedDesc,
         });
 
         res.status(201).json({ data: event });
@@ -135,6 +143,11 @@ exports.deleteEvent = async (req, res) => {
             return res.status(400).json({ message: req.t('event.cannotDeleteActive') });
         }
 
+        await syncRichTextAssetReferences({
+            contentType: 'event',
+            contentId: event.id,
+            html: '',
+        });
         await event.destroy()
         res.status(200).json({ message: req.t('event.deleteSuccess') });
     } catch (error) {
@@ -166,12 +179,22 @@ exports.updateEvent = async (req, res) => {
             return res.status(404).json({ message: req.t('event.notFound') });
         }
 
+        const hasDesc = desc !== undefined && desc !== null;
+        const sanitizedDesc = hasDesc ? sanitizeRichTextHtml(desc) : event.desc;
+
         event.name = name;
-        event.desc = desc || event.desc;
+        event.desc = sanitizedDesc;
         event.start = new Date(start);
         event.end = new Date(end);
 
         await event.save();
+        if (hasDesc) {
+            await syncRichTextAssetReferences({
+                contentType: 'event',
+                contentId: event.id,
+                html: sanitizedDesc,
+            });
+        }
         res.status(200).json({ message: req.t('event.updateSuccess') });
     } catch (error) {
         res.status(500).json({ message: req.t('event.serverError') });

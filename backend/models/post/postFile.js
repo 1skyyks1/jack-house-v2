@@ -23,6 +23,26 @@ const PostFile = sequelize.define('PostFile', {
         type: DataTypes.STRING(255),
         allowNull: false,
     },
+    storage_provider: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+    },
+    object_key: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+    },
+    public_url: {
+        type: DataTypes.STRING(1024),
+        allowNull: true,
+    },
+    download_url: {
+        type: DataTypes.STRING(1024),
+        allowNull: true,
+    },
+    mime_type: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+    },
     uploaded_time: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
@@ -43,6 +63,10 @@ const PostFile = sequelize.define('PostFile', {
     size: {
         type: DataTypes.INTEGER,
         allowNull: false,
+    },
+    checksum: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
     }
 }, {
     tableName: 'post_file',
