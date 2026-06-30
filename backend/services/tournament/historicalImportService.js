@@ -3,6 +3,7 @@ const sequelize = require('../../config/db');
 const { TTeam, TPlayer, Tournament } = require('../../models/tournament');
 const User = require('../../models/user/user');
 const auditService = require('./auditService');
+const fetch = require('node-fetch');
 
 const REVIEW_STATUSES = new Set(['review_pending', 'review_passed', 'review_failed']);
 const TEAM_STATUSES = new Set([0, 1, 2, 3]);
@@ -30,6 +31,11 @@ const normalizeNullableNumber = (value, fieldName) => {
 
 const normalizeBooleanFlag = (value) => {
     return value === true || value === 1 || value === '1' ? 1 : 0;
+};
+
+const osuAvatarUrl = (osuUid) => {
+    const normalized = normalizeNullableNumber(osuUid, 'osu_uid');
+    return normalized ? `https://a.ppy.sh/${normalized}` : null;
 };
 
 const validatePayload = (body) => {
@@ -71,11 +77,12 @@ const resolveExistingUser = async (player, transaction) => {
         throw makeError('导入非站内选手时 user_name 不能为空');
     }
 
+    const avatar = normalizeString(player.avatar) || normalizeString(player.avatar_snapshot) || osuAvatarUrl(osuUid);
     const user = await User.create({
         user_name: userName,
         password: null,
         email: null,
-        avatar: normalizeString(player.avatar) || normalizeString(player.avatar_snapshot),
+        avatar,
         role: 0,
         status: 0,
         osu_uid: osuUid,
@@ -110,7 +117,7 @@ const normalizePlayer = async (tid, player, batchId, seenUserIds, transaction) =
     }
 
     const userNameSnapshot = normalizeString(player.user_name_snapshot) || normalizeString(player.user_name) || user.user_name;
-    const avatarSnapshot = normalizeString(player.avatar_snapshot) || normalizeString(player.avatar) || user.avatar;
+    const avatarSnapshot = normalizeString(player.avatar_snapshot) || normalizeString(player.avatar) || user.avatar || osuAvatarUrl(user.osu_uid);
     const remark = normalizeString(player.remark);
     const batchRemark = `[historical-import:${batchId}]`;
 
@@ -129,6 +136,177 @@ const normalizePlayer = async (tid, player, batchId, seenUserIds, transaction) =
             is_captain: normalizeBooleanFlag(player.is_captain)
         },
         user
+    };
+};
+
+const parseCsv = (text) => {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+
+    for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        const next = text[index + 1];
+
+        if (quoted) {
+            if (char === '"' && next === '"') {
+                cell += '"';
+                index += 1;
+            } else if (char === '"') {
+                quoted = false;
+            } else {
+                cell += char;
+            }
+            continue;
+        }
+
+        if (char === '"') {
+            quoted = true;
+        } else if (char === ',') {
+            row.push(cell);
+            cell = '';
+        } else if (char === '\n') {
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = '';
+        } else if (char !== '\r') {
+            cell += char;
+        }
+    }
+
+    if (cell || row.length) {
+        row.push(cell);
+        rows.push(row);
+    }
+
+    return rows.filter((currentRow) => currentRow.some((value) => normalizeString(value)));
+};
+
+const buildHeaderIndex = (headers) => {
+    const index = new Map();
+    headers.forEach((header, position) => {
+        index.set(String(header || '').trim().toLowerCase(), position);
+    });
+    return index;
+};
+
+const getCsvValue = (row, headerIndex, aliases) => {
+    for (const alias of aliases) {
+        const position = headerIndex.get(alias.toLowerCase());
+        if (position !== undefined) {
+            return normalizeString(row[position]);
+        }
+    }
+    return null;
+};
+
+const extractGoogleSheetCsvUrl = (sourceUrl) => {
+    const normalized = normalizeString(sourceUrl);
+    if (!normalized) {
+        return null;
+    }
+
+    let url;
+    try {
+        url = new URL(normalized);
+    } catch (error) {
+        throw makeError('Google Sheet 链接无效');
+    }
+
+    if (url.hostname !== 'docs.google.com') {
+        throw makeError('只支持 docs.google.com 的 Google Sheet 链接');
+    }
+
+    const match = url.pathname.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+    if (!match) {
+        throw makeError('Google Sheet 链接格式无效');
+    }
+
+    const exportUrl = new URL(`https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq`);
+    exportUrl.searchParams.set('tqx', 'out:csv');
+
+    const gid = url.searchParams.get('gid');
+    if (gid) {
+        exportUrl.searchParams.set('gid', gid);
+    }
+
+    return exportUrl.toString();
+};
+
+const fetchGoogleSheetCsv = async (sourceUrl) => {
+    const csvUrl = extractGoogleSheetCsvUrl(sourceUrl);
+    if (!csvUrl) {
+        throw makeError('Google Sheet 链接不能为空');
+    }
+
+    const response = await fetch(csvUrl, { timeout: 15000 });
+    if (!response.ok) {
+        throw makeError(`Google Sheet 读取失败：${response.status}`, 502);
+    }
+
+    return await response.text();
+};
+
+const googleFormCsvToImportPayload = (csvText, body) => {
+    const rows = parseCsv(csvText);
+    if (rows.length < 2) {
+        throw makeError('CSV 至少需要表头和一行数据');
+    }
+
+    const headerIndex = buildHeaderIndex(rows[0]);
+    const teams = rows.slice(1).map((row, rowIndex) => {
+        const lineNumber = rowIndex + 2;
+        const teamName = getCsvValue(row, headerIndex, ['Team Name', '队伍名', '队伍名称']);
+        const captainOsuUid = getCsvValue(row, headerIndex, ['Your osu! userid', '队长 osu! userid', '队长 osu_uid', 'osu_uid']);
+        const captainName = getCsvValue(row, headerIndex, ['Your osu! username', '队长 osu! username', '队长用户名', 'osu username']);
+        const captainDiscord = getCsvValue(row, headerIndex, ['Your Discord account', '队长 Discord', 'Discord']);
+        const teammateOsuUid = getCsvValue(row, headerIndex, ["Your teammate's osu! userid", '队友 osu! userid', '队友 osu_uid']);
+        const teammateName = getCsvValue(row, headerIndex, ["Your teammate's osu! username", '队友 osu! username', '队友用户名']);
+        const teammateDiscord = getCsvValue(row, headerIndex, ["Your teammate's Discord account", '队友 Discord']);
+
+        if (!teamName) {
+            throw makeError(`第 ${lineNumber} 行缺少 Team Name`);
+        }
+        if (!captainOsuUid || !captainName) {
+            throw makeError(`第 ${lineNumber} 行缺少队长 osu_uid 或用户名`);
+        }
+
+        const players = [{
+            contact_discord: captainDiscord,
+            is_captain: true,
+            osu_uid: captainOsuUid,
+            review_status: 'review_passed',
+            user_name: captainName
+        }];
+
+        if (teammateOsuUid || teammateName || teammateDiscord) {
+            if (!teammateOsuUid || !teammateName) {
+                throw makeError(`第 ${lineNumber} 行队友 osu_uid 或用户名不完整`);
+            }
+            players.push({
+                contact_discord: teammateDiscord,
+                is_captain: false,
+                osu_uid: teammateOsuUid,
+                review_status: 'review_passed',
+                user_name: teammateName
+            });
+        }
+
+        return {
+            avatar: null,
+            display_name: teamName,
+            name: teamName,
+            players,
+            status: 1
+        };
+    });
+
+    return {
+        batch_id: normalizeString(body.batch_id) || `google-form-${Date.now()}`,
+        dry_run: body.dry_run,
+        teams
     };
 };
 
@@ -320,5 +498,12 @@ const importTeams = async (tid, body, operatorId) => {
 };
 
 module.exports = {
-    importTeams
+    fetchGoogleSheetCsv,
+    googleFormCsvToImportPayload,
+    importTeams,
+    importGoogleFormTeams: async (tid, body, operatorId) => {
+        const csvText = normalizeString(body.csv_text) || await fetchGoogleSheetCsv(body.source_url);
+        const payload = googleFormCsvToImportPayload(csvText, body);
+        return await importTeams(tid, payload, operatorId);
+    }
 };

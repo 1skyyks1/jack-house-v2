@@ -144,6 +144,7 @@ router.get('/:tid/audit-logs', authMiddleware(), isHost, auditController.getAudi
 
 // 历史赛事补录
 router.post('/:tid/import/teams', authMiddleware(), isHost, historicalImportController.importTeams);
+router.post('/:tid/import/google-form', authMiddleware(), isHost, historicalImportController.importGoogleFormTeams);
 
 // 添加 Staff
 router.post('/:tid/staff', authMiddleware(), isHost, staffController.addStaff);
