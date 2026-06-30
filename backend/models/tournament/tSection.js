@@ -22,6 +22,16 @@ const TSection = sequelize.define('TSection', {
         allowNull: false,
         comment: '内容块标题'
     },
+    title_zh: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: '中文标题'
+    },
+    title_en: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: '英文标题'
+    },
     format: {
         type: DataTypes.STRING(16),
         allowNull: false,
@@ -33,10 +43,30 @@ const TSection = sequelize.define('TSection', {
         allowNull: true,
         comment: 'Markdown 原文'
     },
+    source_markdown_zh: {
+        type: DataTypes.TEXT('long'),
+        allowNull: true,
+        comment: '中文 Markdown 原文'
+    },
+    source_markdown_en: {
+        type: DataTypes.TEXT('long'),
+        allowNull: true,
+        comment: '英文 Markdown 原文'
+    },
     content_html: {
         type: DataTypes.TEXT('long'),
         allowNull: true,
         comment: '渲染后的 HTML'
+    },
+    content_html_zh: {
+        type: DataTypes.TEXT('long'),
+        allowNull: true,
+        comment: '中文渲染后的 HTML'
+    },
+    content_html_en: {
+        type: DataTypes.TEXT('long'),
+        allowNull: true,
+        comment: '英文渲染后的 HTML'
     },
     sort_order: {
         type: DataTypes.INTEGER,

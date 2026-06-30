@@ -22,6 +22,11 @@ const TMappool = sequelize.define('TMappool', {
         allowNull: false,
         comment: 'osu beatmap_id'
     },
+    set_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'osu beatmapset_id'
+    },
     artist: {
         type: DataTypes.STRING(255),
         allowNull: false,

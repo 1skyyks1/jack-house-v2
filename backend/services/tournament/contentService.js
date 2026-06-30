@@ -43,6 +43,14 @@ const renderContentHtml = ({ format, source_markdown, content_html }) => {
     return sanitizeContentHtml(content_html || '');
 };
 
+const firstText = (...values) => {
+    for (const value of values) {
+        const text = String(value || '').trim();
+        if (text) return text;
+    }
+    return '';
+};
+
 const normalizeSectionPayload = (body) => {
     const type = body.type || 'rules';
     const format = body.format || 'markdown';
@@ -60,12 +68,18 @@ const normalizeSectionPayload = (body) => {
 
     const payload = {
         type,
-        title: body.title || '',
+        title_zh: String(body.title_zh ?? body.title ?? '').trim(),
+        title_en: String(body.title_en ?? '').trim(),
         format,
-        source_markdown: format === 'markdown' ? (body.source_markdown || body.content || '') : null,
+        source_markdown: format === 'markdown' ? (body.source_markdown ?? body.source_markdown_zh ?? body.content ?? '') : null,
+        source_markdown_zh: format === 'markdown' ? (body.source_markdown_zh ?? body.source_markdown ?? body.content ?? '') : null,
+        source_markdown_en: format === 'markdown' ? (body.source_markdown_en ?? '') : null,
         content_html: body.content_html || '',
+        content_html_zh: body.content_html_zh || '',
+        content_html_en: body.content_html_en || '',
         sort_order: Number.isInteger(body.sort_order) ? body.sort_order : Number(body.sort_order || 0)
     };
+    payload.title = firstText(body.title, payload.title_zh, payload.title_en);
 
     if (!payload.title.trim()) {
         const error = new Error('内容标题不能为空');
@@ -74,6 +88,16 @@ const normalizeSectionPayload = (body) => {
     }
 
     payload.content_html = renderContentHtml(payload);
+    payload.content_html_zh = renderContentHtml({
+        format,
+        source_markdown: payload.source_markdown_zh ?? payload.source_markdown,
+        content_html: payload.content_html_zh || payload.content_html
+    });
+    payload.content_html_en = renderContentHtml({
+        format,
+        source_markdown: payload.source_markdown_en,
+        content_html: payload.content_html_en
+    });
     return payload;
 };
 
@@ -102,6 +126,8 @@ const listPublicSections = async (tid, type) => {
     return sections.map((section) => {
         const raw = auditService.pickModelValues(section);
         delete raw.source_markdown;
+        delete raw.source_markdown_zh;
+        delete raw.source_markdown_en;
         return raw;
     });
 };
@@ -117,7 +143,7 @@ const createSection = async (tid, body, userId) => {
     await syncRichTextAssetReferences({
         contentType: 't_section',
         contentId: section.id,
-        html: section.content_html,
+        html: [section.content_html, section.content_html_zh, section.content_html_en].filter(Boolean).join('\n'),
     });
     await auditService.writeAuditLog({
         t_id: tid,
@@ -142,9 +168,15 @@ const updateSection = async (tid, sectionId, body, userId) => {
     const payload = normalizeSectionPayload({
         type: body.type ?? section.type,
         title: body.title ?? section.title,
+        title_zh: body.title_zh ?? section.title_zh,
+        title_en: body.title_en ?? section.title_en,
         format: body.format ?? section.format,
         source_markdown: body.source_markdown ?? section.source_markdown,
+        source_markdown_zh: body.source_markdown_zh ?? section.source_markdown_zh,
+        source_markdown_en: body.source_markdown_en ?? section.source_markdown_en,
         content_html: body.content_html ?? section.content_html,
+        content_html_zh: body.content_html_zh ?? section.content_html_zh,
+        content_html_en: body.content_html_en ?? section.content_html_en,
         sort_order: body.sort_order ?? section.sort_order
     });
 
@@ -156,7 +188,7 @@ const updateSection = async (tid, sectionId, body, userId) => {
     await syncRichTextAssetReferences({
         contentType: 't_section',
         contentId: section.id,
-        html: section.content_html,
+        html: [section.content_html, section.content_html_zh, section.content_html_en].filter(Boolean).join('\n'),
     });
     await auditService.writeAuditLog({
         t_id: tid,

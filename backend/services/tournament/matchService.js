@@ -182,18 +182,42 @@ const normalizeMapType = (type) => {
     return normalized;
 };
 
+const normalizePositiveInt = (value, label, defaultValue = null) => {
+    if (value === undefined || value === null || value === '') return defaultValue;
+    const normalized = Number(value);
+    if (!Number.isInteger(normalized) || normalized <= 0) {
+        throw makeError(`${label}无效`);
+    }
+    return normalized;
+};
+
+const parseBeatmapUrl = (value) => {
+    const url = String(value || '').trim();
+    if (!url) return {};
+
+    const match = url.match(/beatmapsets\/(\d+)(?:#\w+\/(\d+))?/);
+    if (!match) {
+        throw makeError('osu! 谱面 URL 无效');
+    }
+
+    return {
+        map_id: match[2] ? Number(match[2]) : null,
+        set_id: Number(match[1])
+    };
+};
+
 const addRoundMap = async (tid, roundId, body, operatorId) => {
     await ensureRoundInTournament(tid, roundId);
 
-    const mapId = Number(body.map_id);
-    if (!Number.isInteger(mapId) || mapId <= 0) {
-        throw makeError('Beatmap ID 无效');
-    }
+    const parsedUrl = parseBeatmapUrl(body.url || body.beatmap_url);
+    const mapId = normalizePositiveInt(body.map_id ?? parsedUrl.map_id, 'Beatmap ID');
+    const setId = normalizePositiveInt(body.set_id ?? parsedUrl.set_id, 'Beatmapset ID', null);
 
     const payload = {
         artist: String(body.artist || '').trim(),
         map_id: mapId,
         mapper: String(body.mapper || '').trim(),
+        set_id: setId,
         title: String(body.title || '').trim(),
         type: normalizeMapType(body.type)
     };

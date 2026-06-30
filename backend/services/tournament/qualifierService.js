@@ -477,6 +477,63 @@ const fetchQualScoresFromMp = async (tid, body, operatorId) => {
     }
 };
 
+const normalizeMpIds = (body) => {
+    const values = [];
+    if (Array.isArray(body.mp_ids)) {
+        values.push(...body.mp_ids);
+    } else if (body.mp_ids !== undefined && body.mp_ids !== null && body.mp_ids !== '') {
+        values.push(...(String(body.mp_ids).match(/\d{5,}/g) || []));
+    }
+    if (body.mp_id !== undefined && body.mp_id !== null && body.mp_id !== '') {
+        values.push(body.mp_id);
+    }
+
+    const mpIds = [...new Set(values.map(value => Number(value)).filter(value => Number.isInteger(value) && value > 0))];
+    if (mpIds.length === 0) {
+        throw makeError('缺少 MP ID');
+    }
+    if (mpIds.length > 128) {
+        throw makeError('单次最多导入 128 个 MP');
+    }
+    return mpIds;
+};
+
+const fetchQualScoresFromMps = async (tid, body, operatorId) => {
+    const mpIds = normalizeMpIds(body);
+    if (mpIds.length === 1) {
+        return await fetchQualScoresFromMp(tid, { ...body, mp_id: mpIds[0] }, operatorId);
+    }
+
+    const results = [];
+    for (const mpId of mpIds) {
+        try {
+            const result = await fetchQualScoresFromMp(tid, { ...body, mp_id: mpId }, operatorId);
+            results.push({
+                import_log_count: result.importLogs?.length || 0,
+                mp_id: mpId,
+                saved_count: result.scores?.length || 0,
+                skipped_duplicates: result.skippedDuplicates || 0,
+                status: 'success'
+            });
+        } catch (error) {
+            results.push({
+                error: error.message || '导入失败',
+                mp_id: mpId,
+                status: 'failed'
+            });
+        }
+    }
+
+    return {
+        failed_count: results.filter(result => result.status === 'failed').length,
+        message: '批量成绩获取完成',
+        results,
+        saved_count: results.reduce((total, result) => total + (result.saved_count || 0), 0),
+        success_count: results.filter(result => result.status === 'success').length,
+        total: results.length
+    };
+};
+
 const calculateRanking = async (tid, operatorId) => {
     await ensureQualifierUnlocked(tid);
 
@@ -662,7 +719,7 @@ module.exports = {
     calculateRanking,
     createQualMap,
     deleteQualMap,
-    fetchQualScoresFromMp,
+    fetchQualScoresFromMp: fetchQualScoresFromMps,
     getQualRanking,
     listImports,
     listQualScores,

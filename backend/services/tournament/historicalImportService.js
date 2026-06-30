@@ -416,6 +416,7 @@ const importTeams = async (tid, body, operatorId) => {
             if (!dryRun) {
                 team = await TTeam.create({
                     ...teamData,
+                    t_id: tid,
                     captain_id: captain.user.user_id,
                     invite_code: null
                 }, { transaction });
