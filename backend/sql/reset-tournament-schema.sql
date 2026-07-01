@@ -33,7 +33,7 @@ CREATE TABLE `tournament` (
   `team_size_min` INT NOT NULL DEFAULT 1 COMMENT '队伍最少人数',
   `team_size_max` INT NOT NULL DEFAULT 2 COMMENT '队伍最大人数',
   `qual_top_n` TINYINT DEFAULT 32 COMMENT '资格赛前n晋级正赛',
-  `qual_rank_mode` TINYINT DEFAULT 0 COMMENT '0=排名累加 1=加权分数',
+  `qual_rank_mode` TINYINT DEFAULT 0 COMMENT '0=总分排名 1=各stage排名之和',
   `reg_start` DATETIME NOT NULL COMMENT '报名开始时间',
   `reg_end` DATETIME NOT NULL COMMENT '报名结束时间',
   `qual_start` DATETIME NULL COMMENT '资格赛开始时间',

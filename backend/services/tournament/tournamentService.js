@@ -26,6 +26,9 @@ const UPDATE_FIELDS = [
     'status'
 ];
 
+const QUAL_RANK_MODE_TOTAL_SCORE = 0;
+const QUAL_RANK_MODE_RANK_SUM = 1;
+
 const makeError = (message, status = 400) => {
     const error = new Error(message);
     error.status = status;
@@ -39,6 +42,19 @@ const pickFields = (body, fields) => {
         }
         return acc;
     }, {});
+};
+
+const normalizeQualRankMode = (value) => {
+    if (value === undefined || value === null || value === '') {
+        return QUAL_RANK_MODE_TOTAL_SCORE;
+    }
+
+    const rankMode = Number(value);
+    if (rankMode === QUAL_RANK_MODE_TOTAL_SCORE || rankMode === QUAL_RANK_MODE_RANK_SUM) {
+        return rankMode;
+    }
+
+    throw makeError('资格赛排名方式无效');
 };
 
 const listTournaments = async () => {
@@ -66,7 +82,7 @@ const createTournament = async (body, operatorId) => {
         team_size_min: body.team_size_min || 1,
         team_size_max: body.team_size_max || 2,
         qual_top_n: body.qual_top_n || 32,
-        qual_rank_mode: body.qual_rank_mode || 0,
+        qual_rank_mode: normalizeQualRankMode(body.qual_rank_mode),
         created_by: operatorId,
         status: 0
     };
@@ -103,6 +119,10 @@ const updateTournament = async (tid, body, operatorId) => {
     }
 
     const patch = pickFields(body, UPDATE_FIELDS);
+    if (body.qual_rank_mode !== undefined) {
+        patch.qual_rank_mode = normalizeQualRankMode(body.qual_rank_mode);
+    }
+
     const oldValue = auditService.pickModelValues(tournament);
     await tournament.update(patch);
 

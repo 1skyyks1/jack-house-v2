@@ -18,6 +18,8 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const cors = require('cors');
+const mariadb = require('mariadb');
+const { createAnalyticsRouter } = require('@jack-house-analytics/server-express');
 const i18next = require('i18next');
 const Backend = require('i18next-fs-backend');
 const i18nextMiddleware = require('i18next-http-middleware');
@@ -51,6 +53,7 @@ const corsOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '')
     .filter(Boolean);
 const isProduction = process.env.NODE_ENV === 'production';
 const allowLocalhostCors = !isProduction && process.env.CORS_ALLOW_LOCALHOST !== 'false';
+const analyticsEnabled = process.env.ANALYTICS_ENABLED !== 'false';
 
 if (isProduction && corsOrigins.length === 0) {
     throw new Error('CORS_ORIGIN or FRONTEND_URL must be set in production when credentials are enabled');
@@ -63,6 +66,23 @@ const isLocalhostOrigin = (origin) => {
     } catch (error) {
         return false;
     }
+};
+
+const getAnalyticsAllowedOrigins = () => {
+    const origins = new Set(corsOrigins);
+
+    if (process.env.FRONTEND_URL) {
+        origins.add(process.env.FRONTEND_URL);
+    }
+
+    if (allowLocalhostCors) {
+        ['5173', '5174', '5175'].forEach((port) => {
+            origins.add(`http://localhost:${port}`);
+            origins.add(`http://127.0.0.1:${port}`);
+        });
+    }
+
+    return [...origins];
 };
 
 app.use(cors({
@@ -92,6 +112,25 @@ const osuLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 })
+
+if (analyticsEnabled) {
+    const analyticsPool = mariadb.createPool({
+        host: process.env.ANALYTICS_DB_HOST || process.env.DB_HOST,
+        database: process.env.ANALYTICS_DB_NAME || process.env.DB_NAME,
+        user: process.env.ANALYTICS_DB_USER || process.env.DB_USER,
+        password: process.env.ANALYTICS_DB_PASSWORD ?? process.env.DB_PASSWORD,
+        connectionLimit: Number(process.env.ANALYTICS_DB_CONNECTION_LIMIT || 5),
+    });
+
+    app.use('/analytics', commonLimiter, createAnalyticsRouter({
+        express,
+        mariaDbPool: analyticsPool,
+        apps: (process.env.ANALYTICS_APPS || 'jack-house-v3').split(',').map((appId) => appId.trim()).filter(Boolean),
+        allowedOrigins: getAnalyticsAllowedOrigins(),
+        autoMigrate: process.env.ANALYTICS_AUTO_MIGRATE === 'true' || (!isProduction && process.env.ANALYTICS_AUTO_MIGRATE !== 'false'),
+        enableStats: process.env.ANALYTICS_ENABLE_STATS !== 'false',
+    }));
+}
 
 // 解析 JSON 请求体
 app.use(express.json());
