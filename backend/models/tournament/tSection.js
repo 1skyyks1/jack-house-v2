@@ -15,7 +15,7 @@ const TSection = sequelize.define('TSection', {
     type: {
         type: DataTypes.STRING(32),
         allowNull: false,
-        comment: 'rules/description/prize/faq'
+        comment: '内容类型 slug，如 rules/description/prize/faq/schedule'
     },
     title: {
         type: DataTypes.STRING(255),

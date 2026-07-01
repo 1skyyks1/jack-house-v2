@@ -62,7 +62,7 @@ const Tournament = sequelize.define('Tournament', {
     qual_rank_mode: {
         type: DataTypes.TINYINT,
         defaultValue: 0,
-        comment: '0=排名累加 1=加权分数'
+        comment: '0=总分排名 1=各stage排名之和'
     },
     reg_start: {
         type: DataTypes.DATE,

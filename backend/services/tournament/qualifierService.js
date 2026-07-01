@@ -7,6 +7,8 @@ const osuMatchService = require('./osuMatchService');
 
 const CLIENT_ID = Number(process.env.OSU_CLIENT_ID);
 const CLIENT_SECRET = process.env.OSU_CLIENT_SECRET;
+const QUAL_RANK_MODE_TOTAL_SCORE = 0;
+const QUAL_RANK_MODE_RANK_SUM = 1;
 
 const makeError = (message, status = 400) => {
     const error = new Error(message);
@@ -535,7 +537,10 @@ const fetchQualScoresFromMps = async (tid, body, operatorId) => {
 };
 
 const calculateRanking = async (tid, operatorId) => {
-    await ensureQualifierUnlocked(tid);
+    const tournament = await ensureQualifierUnlocked(tid);
+    const rankMode = Number(tournament.qual_rank_mode) === QUAL_RANK_MODE_RANK_SUM
+        ? QUAL_RANK_MODE_RANK_SUM
+        : QUAL_RANK_MODE_TOTAL_SCORE;
 
     const teams = await TTeam.findAll({
         where: { t_id: tid, status: 1 },
@@ -551,6 +556,8 @@ const calculateRanking = async (tid, operatorId) => {
         teamScores.set(team.id, {
             team,
             bestByMap: new Map(),
+            mapRanks: new Map(),
+            rankScore: 0,
             totalScore: 0
         });
     }
@@ -560,6 +567,8 @@ const calculateRanking = async (tid, operatorId) => {
     });
 
     for (const score of allScores) {
+        if (score.score <= 0) continue;
+
         const entry = teamScores.get(score.team_id);
         if (!entry) continue;
 
@@ -574,23 +583,23 @@ const calculateRanking = async (tid, operatorId) => {
         }
     }
 
-    const ranking = Array.from(teamScores.values()).map(entry => {
-        let totalScore = 0;
-        for (const map of qualMaps) {
-            totalScore += entry.bestByMap.get(map.id)?.score || 0;
-        }
-        entry.totalScore = totalScore;
-        return entry;
-    }).sort((a, b) => {
-        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-        return a.team.id - b.team.id;
-    });
+    const ranking = rankMode === QUAL_RANK_MODE_RANK_SUM
+        ? buildRankSumRanking(teamScores, qualMaps)
+        : buildTotalScoreRanking(teamScores, qualMaps);
+    const rankedTeamIds = new Set(ranking.map(entry => entry.team.id));
+    assignCompetitionRanks(ranking);
 
     for (let i = 0; i < ranking.length; i++) {
         const team = ranking[i].team;
-        team.qual_rank = i + 1;
-        team.qual_score = ranking[i].totalScore;
+        team.qual_rank = ranking[i].rank;
+        team.qual_score = ranking[i].rankingScore;
         await team.save();
+    }
+    for (const entry of teamScores.values()) {
+        if (rankedTeamIds.has(entry.team.id)) continue;
+        entry.team.qual_rank = null;
+        entry.team.qual_score = null;
+        await entry.team.save();
     }
 
     await auditService.writeAuditLog({
@@ -600,24 +609,113 @@ const calculateRanking = async (tid, operatorId) => {
         action: 'calculate_ranking',
         old_value: null,
         new_value: {
-            team_count: ranking.length,
-            map_count: qualMaps.length
+            map_count: qualMaps.length,
+            rank_mode: rankMode,
+            team_count: ranking.length
         },
         operator_id: operatorId
     });
 
     return {
         message: '排名计算完成',
-        ranking: ranking.map((entry, index) => ({
-            rank: index + 1,
+        rank_mode: rankMode,
+        ranking: ranking.map((entry) => ({
+            rank: entry.rank,
             team: entry.team,
+            rankScore: entry.rankScore,
             totalScore: entry.totalScore,
             bestByMap: Array.from(entry.bestByMap.entries()).map(([mapId, best]) => ({
                 map_id: mapId,
-                ...best
+                ...best,
+                rank: entry.mapRanks.get(mapId) ?? null
             }))
         }))
     };
+};
+
+const buildTotalScoreRanking = (teamScores, qualMaps) => {
+    return Array.from(teamScores.values()).map(entry => {
+        let totalScore = 0;
+        for (const map of qualMaps) {
+            totalScore += entry.bestByMap.get(map.id)?.score || 0;
+        }
+        entry.totalScore = totalScore;
+        entry.rankingScore = totalScore;
+        return entry;
+    }).filter(entry => entry.totalScore > 0).sort((a, b) => {
+        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+        return a.team.id - b.team.id;
+    });
+};
+
+const assignCompetitionRanks = (ranking) => {
+    let currentRank = 0;
+    let previousRankingScore = null;
+
+    for (let index = 0; index < ranking.length; index++) {
+        const entry = ranking[index];
+        if (previousRankingScore === null || entry.rankingScore !== previousRankingScore) {
+            currentRank = index + 1;
+            previousRankingScore = entry.rankingScore;
+        }
+        entry.rank = currentRank;
+    }
+};
+
+const buildRankSumRanking = (teamScores, qualMaps) => {
+    const entries = Array.from(teamScores.values());
+
+    for (const entry of entries) {
+        let totalScore = 0;
+        for (const map of qualMaps) {
+            totalScore += entry.bestByMap.get(map.id)?.score || 0;
+        }
+        entry.totalScore = totalScore;
+    }
+    const rankableEntries = entries.filter(entry => entry.totalScore > 0);
+    const missingRank = rankableEntries.length + 1;
+
+    for (const entry of rankableEntries) {
+        for (const map of qualMaps) {
+            entry.mapRanks.set(map.id, missingRank);
+        }
+    }
+
+    for (const map of qualMaps) {
+        const rankedEntries = rankableEntries
+            .filter(entry => entry.bestByMap.has(map.id))
+            .sort((a, b) => {
+                const scoreDiff = (b.bestByMap.get(map.id)?.score || 0) - (a.bestByMap.get(map.id)?.score || 0);
+                if (scoreDiff !== 0) return scoreDiff;
+                return a.team.id - b.team.id;
+            });
+
+        let currentRank = 0;
+        let previousScore = null;
+        for (let index = 0; index < rankedEntries.length; index++) {
+            const entry = rankedEntries[index];
+            const score = entry.bestByMap.get(map.id)?.score || 0;
+            if (previousScore === null || score !== previousScore) {
+                currentRank = index + 1;
+                previousScore = score;
+            }
+            entry.mapRanks.set(map.id, currentRank);
+        }
+    }
+
+    return rankableEntries.map(entry => {
+        let rankScore = 0;
+        for (const map of qualMaps) {
+            rankScore += entry.mapRanks.get(map.id) ?? missingRank;
+        }
+        entry.rankScore = rankScore;
+        entry.rankingScore = rankScore;
+        return entry;
+    }).sort((a, b) => {
+        if (a.rankScore !== b.rankScore) return a.rankScore - b.rankScore;
+        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+        return a.team.id - b.team.id;
+    });
 };
 
 const updateQualScore = async (tid, scoreId, body, operatorId) => {

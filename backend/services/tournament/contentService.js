@@ -5,7 +5,7 @@ const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
 const { syncRichTextAssetReferences } = require('../richTextAssetService');
 
 const ALLOWED_FORMATS = new Set(['markdown', 'html']);
-const ALLOWED_TYPES = new Set(['rules', 'description', 'prize', 'faq']);
+const SECTION_TYPE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 
 const slugifyHeading = (text = '') => String(text)
     .toLowerCase()
@@ -51,11 +51,13 @@ const firstText = (...values) => {
     return '';
 };
 
+const normalizeSectionType = (value = 'rules') => String(value || 'rules').trim().toLowerCase();
+
 const normalizeSectionPayload = (body) => {
-    const type = body.type || 'rules';
+    const type = normalizeSectionType(body.type);
     const format = body.format || 'markdown';
 
-    if (!ALLOWED_TYPES.has(type)) {
+    if (!SECTION_TYPE_PATTERN.test(type)) {
         const error = new Error('不支持的内容类型');
         error.status = 400;
         throw error;
