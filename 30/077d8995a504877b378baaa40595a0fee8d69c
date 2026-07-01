@@ -1,0 +1,14 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "30077d8995a504877b378baaa40595a0fee8d69c",
+  "prompts": {},
+  "humans": {
+    "h_4bc100ba83da7d": {
+      "author": "1skyyks1 <1417044093@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
