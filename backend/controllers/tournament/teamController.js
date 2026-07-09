@@ -1,5 +1,8 @@
+const fs = require('fs');
 const teamService = require('../../services/tournament/teamService');
 const { sendError } = require('../../utils/tournamentI18n');
+const { tournamentTeamAvatarUpload } = require('../../config/multer');
+const { handleUpload } = require('../../middleware/uploadErrorHandler');
 
 const handleError = (res, req, error) => sendError(res, req, error);
 
@@ -82,6 +85,25 @@ exports.updateTeamInfo = async (req, res) => {
         handleError(res, req, error);
     }
 };
+
+exports.uploadTeamAvatar = [
+    handleUpload(tournamentTeamAvatarUpload.single('file')),
+    async (req, res) => {
+        try {
+            const { tid, teamId } = req.params;
+            if (!req.file) {
+                return res.status(400).json({ message: req.t('upload.noFile') });
+            }
+            const team = await teamService.uploadTeamAvatar(tid, req.user.user_id, teamId, req.file);
+            res.status(201).json(team);
+        } catch (error) {
+            if (req.file?.path && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+            handleError(res, req, error);
+        }
+    }
+];
 
 exports.transferCaptain = async (req, res) => {
     try {

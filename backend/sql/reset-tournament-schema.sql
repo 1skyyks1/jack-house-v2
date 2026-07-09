@@ -137,8 +137,7 @@ CREATE TABLE `t_match` (
   `mp_id` INT NULL COMMENT 'osu MP房间id',
   `team1_id` INT NULL COMMENT '红队',
   `team2_id` INT NULL COMMENT '蓝队',
-  `team1_roll` INT NULL COMMENT '红队roll点',
-  `team2_roll` INT NULL COMMENT '蓝队roll点',
+  `roll_winner_id` INT NULL COMMENT 'Roll胜方队伍id',
   `team1_score` INT NOT NULL DEFAULT 0 COMMENT '红队胜场',
   `team2_score` INT NOT NULL DEFAULT 0 COMMENT '蓝队胜场',
   `winner_id` INT NULL COMMENT '胜者队伍id',
@@ -168,7 +167,7 @@ CREATE TABLE `t_match` (
 CREATE TABLE `t_match_action` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `match_id` INT NOT NULL COMMENT '比赛id',
-  `action_type` VARCHAR(32) NOT NULL COMMENT 'roll/protect/ban/pick/score_import/score_edit/timeout/note',
+  `action_type` VARCHAR(32) NOT NULL COMMENT 'protect/ban/pick/score_import/score_edit/timeout/note',
   `team_id` INT NULL COMMENT '执行队伍id',
   `map_id` INT NULL COMMENT '关联正赛图池id',
   `value_json` TEXT NULL COMMENT '操作扩展数据 JSON',

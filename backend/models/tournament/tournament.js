@@ -42,6 +42,11 @@ const Tournament = sequelize.define('Tournament', {
         allowNull: true,
         comment: '横幅图片'
     },
+    default_team_avatar: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: '默认队旗'
+    },
     team_size_min: {
         type: DataTypes.INTEGER,
         allowNull: false,

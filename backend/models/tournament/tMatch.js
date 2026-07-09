@@ -27,15 +27,10 @@ const TMatch = sequelize.define('TMatch', {
         allowNull: true,
         comment: '蓝队'
     },
-    team1_roll: {
+    roll_winner_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        comment: '红队roll点'
-    },
-    team2_roll: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: '蓝队roll点'
+        comment: 'Roll胜方队伍id'
     },
     team1_score: {
         type: DataTypes.INTEGER,

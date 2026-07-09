@@ -49,7 +49,39 @@ const getCompleteMatch = async (mpId) => {
 };
 
 const getScoreValue = (score) => {
-    return Number(score?.legacy_total_score || score?.total_score || score?.score || 0);
+    const candidates = [
+        score?.legacy_total_score,
+        score?.total_score,
+        score?.score,
+        score?.statistics?.legacy_total_score,
+        score?.statistics?.total_score,
+        score?.statistics?.score,
+        score?.score?.legacy_total_score,
+        score?.score?.total_score,
+        score?.score?.score,
+        score?.score?.statistics?.legacy_total_score,
+        score?.score?.statistics?.total_score,
+        score?.score?.statistics?.score,
+        score?.totalScore,
+        score?.legacyTotalScore
+    ];
+    for (const value of candidates) {
+        const normalized = Number(value);
+        if (Number.isFinite(normalized) && normalized > 0) return normalized;
+    }
+    return 0;
+};
+
+const getScoreUserId = (score) => {
+    return Number(
+        score?.user_id
+        || score?.user?.id
+        || score?.userId
+        || score?.score?.user_id
+        || score?.score?.user?.id
+        || score?.score?.userId
+        || 0
+    );
 };
 
 const getGameId = (game, event) => {
@@ -77,5 +109,6 @@ module.exports = {
     getGameEvents,
     getGameId,
     getGameScores,
+    getScoreUserId,
     getScoreValue
 };

@@ -1,7 +1,10 @@
 const sequelize = require('../../config/db');
+const fs = require('fs');
 const { Tournament, TStaff, TRound } = require('../../models/tournament');
 const User = require('../../models/user/user');
+const storage = require('../storage');
 const auditService = require('./auditService');
+const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer');
 
 const CREATE_FIELDS = [
     'name',
@@ -28,6 +31,8 @@ const UPDATE_FIELDS = [
 
 const QUAL_RANK_MODE_TOTAL_SCORE = 0;
 const QUAL_RANK_MODE_RANK_SUM = 1;
+const TEAM_AVATAR_STORAGE_SCOPE = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_SCOPE || (process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_PROVIDER ? 'TOURNAMENT_TEAM_AVATAR' : 'RICHTEXT');
+const TEAM_AVATAR_STORAGE_BUCKET = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_BUCKET || 'tournament-team-avatars';
 
 const makeError = (message, status = 400) => {
     const error = new Error(message);
@@ -139,6 +144,60 @@ const updateTournament = async (tid, body, operatorId) => {
     return tournament;
 };
 
+const uploadDefaultTeamAvatar = async (tid, file, operatorId) => {
+    const tournament = await Tournament.findByPk(tid);
+    if (!tournament) {
+        throw makeError('赛事不存在', 404);
+    }
+    if (!file?.path) {
+        throw makeError('没有图片上传');
+    }
+
+    const removeTempFile = () => {
+        if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+        }
+    };
+
+    try {
+        const optimized = await optimizeImageFile(file, { convertToWebp: true });
+        const checksum = await hashFile(file.path);
+        const fileName = buildContentHashObjectName(checksum, optimized.mimeType, file.filename);
+        const objectName = `tournaments/${tid}/default-team-avatar/${fileName}`;
+        const uploaded = await storage.uploadFile(TEAM_AVATAR_STORAGE_SCOPE, {
+            bucket: TEAM_AVATAR_STORAGE_BUCKET,
+            objectName,
+            filePath: file.path,
+            mimeType: optimized.mimeType,
+            size: optimized.size,
+        });
+        const avatarUrl = uploaded.publicUrl || uploaded.downloadUrl || uploaded.url;
+        const oldValue = auditService.pickModelValues(tournament);
+        await tournament.update({ default_team_avatar: avatarUrl || null });
+
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'tournament',
+            entity_id: tournament.id,
+            action: 'upload_default_team_avatar',
+            old_value: oldValue,
+            new_value: {
+                ...auditService.pickModelValues(tournament),
+                storage_provider: uploaded.provider,
+                object_key: uploaded.objectKey,
+                mime_type: uploaded.mimeType,
+                size: optimized.size,
+                checksum,
+            },
+            operator_id: operatorId
+        });
+
+        return tournament;
+    } finally {
+        removeTempFile();
+    }
+};
+
 const deleteTournament = async (tid, operatorId) => {
     const tournament = await Tournament.findByPk(tid);
     if (!tournament) {
@@ -163,5 +222,6 @@ module.exports = {
     deleteTournament,
     getTournament,
     listTournaments,
-    updateTournament
+    updateTournament,
+    uploadDefaultTeamAvatar
 };

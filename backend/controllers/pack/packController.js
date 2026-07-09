@@ -1,4 +1,4 @@
-const { Pack, Tag, User, PackMap } = require('../../models');
+const { Pack, Tag, User, PackMap, PackComment } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 
@@ -142,5 +142,30 @@ exports.getPackById = async (req, res) => {
         res.status(200).json({ data: pack });
     } catch (error) {
         res.status(500).json({ message: req.t('pack.getDetailFailed') });
+    }
+};
+
+// 删除图包
+exports.deletePack = async (req, res) => {
+    const t = await sequelize.transaction();
+
+    try {
+        const pack = await Pack.findByPk(req.params.pack_id, { transaction: t });
+
+        if (!pack) {
+            await t.rollback();
+            return res.status(404).json({ message: req.t('pack.notFound') });
+        }
+
+        await pack.setTags([], { transaction: t });
+        await PackMap.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
+        await PackComment.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
+        await pack.destroy({ transaction: t });
+
+        await t.commit();
+        res.status(200).json({ message: req.t('pack.deleteSuccess') });
+    } catch (error) {
+        await t.rollback();
+        res.status(500).json({ message: req.t('pack.deleteFailed') });
     }
 };

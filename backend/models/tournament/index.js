@@ -69,6 +69,8 @@ TMatchAction.belongsTo(User, { foreignKey: 'created_by', as: 'createdBy' });
 // TGame 关联
 TGame.belongsTo(TMatch, { foreignKey: 'match_id', as: 'match' });
 TGame.belongsTo(TMappool, { foreignKey: 'map_id', as: 'map' });
+TGame.belongsTo(TPlayer, { foreignKey: 'player1_id', as: 'player1' });
+TGame.belongsTo(TPlayer, { foreignKey: 'player2_id', as: 'player2' });
 
 // TQualMappool 关联
 TQualMappool.belongsTo(Tournament, { foreignKey: 't_id', as: 'tournament' });

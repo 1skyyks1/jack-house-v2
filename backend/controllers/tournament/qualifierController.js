@@ -165,6 +165,18 @@ exports.lockQualifierRanking = async (req, res) => {
     }
 };
 
+// 解锁资格赛排名
+exports.unlockQualifierRanking = async (req, res) => {
+    try {
+        const { tid } = req.params;
+        const result = await qualifierService.unlockQualifierRanking(tid, req.user?.user_id);
+        res.json(translatePayload(req, result));
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
+    }
+};
+
 // 手动修正资格赛成绩
 exports.updateQualScore = async (req, res) => {
     try {

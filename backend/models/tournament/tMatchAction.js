@@ -15,7 +15,7 @@ const TMatchAction = sequelize.define('TMatchAction', {
     action_type: {
         type: DataTypes.STRING(32),
         allowNull: false,
-        comment: 'roll/protect/ban/pick/score_import/score_edit/timeout/note'
+        comment: 'protect/ban/pick/score_import/score_edit/timeout/note'
     },
     team_id: {
         type: DataTypes.INTEGER,

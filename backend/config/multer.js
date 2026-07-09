@@ -98,6 +98,22 @@ const richTextImageUpload = multer({
     }
 });
 
+const tournamentTeamAvatarUpload = multer({
+    storage: storage,
+    limits: { fileSize: parseFileSize(process.env.TOURNAMENT_TEAM_AVATAR_MAX_SIZE_MB, 2) },
+    fileFilter: function (req, file, cb) {
+        const filetypes = /jpeg|jpg|png|gif|webp/;
+        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = filetypes.test(file.mimetype);
+
+        if (extname && mimetype) {
+            return cb(null, true);
+        }
+
+        return cb(new Error('upload.invalidImageType'), false);
+    }
+});
+
 const postFileUpload = multer({
     storage,
     limits: { fileSize: parseFileSize(process.env.POSTFILE_MAX_SIZE_MB, 20) },
@@ -126,5 +142,6 @@ module.exports = {
     eventStageBgUpload: eventStageBgUpload,
     badgeUpload: badgeUpload,
     richTextImageUpload: richTextImageUpload,
+    tournamentTeamAvatarUpload: tournamentTeamAvatarUpload,
     postFileUpload: postFileUpload
 };

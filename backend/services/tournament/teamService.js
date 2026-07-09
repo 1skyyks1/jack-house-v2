@@ -1,9 +1,12 @@
 const crypto = require('crypto');
+const fs = require('fs');
 const { Op } = require('sequelize');
 const sequelize = require('../../config/db');
 const { TTeam, TPlayer, TStaff, Tournament } = require('../../models/tournament');
 const User = require('../../models/user/user');
+const storage = require('../storage');
 const auditService = require('./auditService');
+const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer');
 
 const TEAM_STATUS = {
     CREATED: 0,
@@ -11,6 +14,9 @@ const TEAM_STATUS = {
     SUBMITTED: 2,
     LOCKED: 3
 };
+
+const TEAM_AVATAR_STORAGE_SCOPE = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_SCOPE || (process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_PROVIDER ? 'TOURNAMENT_TEAM_AVATAR' : 'RICHTEXT');
+const TEAM_AVATAR_STORAGE_BUCKET = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_BUCKET || 'tournament-team-avatars';
 
 const makeError = (message, status = 400) => {
     const error = new Error(message);
@@ -141,7 +147,7 @@ const createTeam = async (tid, userId, body) => {
             t_id: tid,
             name,
             display_name: body.display_name || name,
-            avatar: body.avatar || null,
+            avatar: null,
             is_open: isOpen ? 1 : 0,
             invite_code: inviteCode,
             captain_id: userId,
@@ -441,9 +447,6 @@ const updateTeamInfo = async (tid, userId, teamId, body) => {
         const displayName = String(body.display_name || '').trim();
         patch.display_name = displayName || patch.name || team.name;
     }
-    if (body.avatar !== undefined) {
-        patch.avatar = body.avatar || null;
-    }
     if (body.is_open !== undefined) {
         const isOpen = body.is_open === true || body.is_open === 1 || body.is_open === '1';
         patch.is_open = isOpen ? 1 : 0;
@@ -463,6 +466,73 @@ const updateTeamInfo = async (tid, userId, teamId, body) => {
     });
 
     return team;
+};
+
+const uploadTeamAvatar = async (tid, userId, teamId, file) => {
+    const tournament = await ensureTournament(tid);
+    const isHostOperator = await isTournamentHost(tid, userId);
+    if (!isHostOperator) {
+        ensureRegistrationOpen(tournament);
+    }
+
+    const team = await TTeam.findOne({
+        where: { id: teamId, t_id: tid },
+        include: [{ model: TPlayer, as: 'players' }]
+    });
+    if (!team) {
+        throw makeError('队伍不存在', 404);
+    }
+    if (!isHostOperator) {
+        ensureTeamMutableByPlayer(team);
+    }
+    if (!isTeamCaptain(team, userId) && !isHostOperator) {
+        throw makeError('只有队长可以修改队伍信息');
+    }
+    if (!file?.path) {
+        throw makeError('没有图片上传');
+    }
+
+    const removeTempFile = () => {
+        if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+        }
+    };
+
+    try {
+        const optimized = await optimizeImageFile(file, { convertToWebp: true });
+        const checksum = await hashFile(file.path);
+        const fileName = buildContentHashObjectName(checksum, optimized.mimeType, file.filename);
+        const objectName = `tournaments/${tid}/teams/${teamId}/${fileName}`;
+        const uploaded = await storage.uploadFile(TEAM_AVATAR_STORAGE_SCOPE, {
+            bucket: TEAM_AVATAR_STORAGE_BUCKET,
+            objectName,
+            filePath: file.path,
+            mimeType: optimized.mimeType,
+            size: optimized.size,
+        });
+        const avatarUrl = uploaded.publicUrl || uploaded.downloadUrl || uploaded.url;
+        const oldValue = auditService.pickModelValues(team, ['id', 'name', 'display_name', 'avatar']);
+        await team.update({ avatar: avatarUrl || null });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'team',
+            entity_id: team.id,
+            action: isHostOperator && !isTeamCaptain(team, userId) ? 'host_upload_avatar' : 'upload_avatar',
+            old_value: oldValue,
+            new_value: {
+                ...auditService.pickModelValues(team, ['id', 'name', 'display_name', 'avatar']),
+                storage_provider: uploaded.provider,
+                object_key: uploaded.objectKey,
+                mime_type: uploaded.mimeType,
+                size: optimized.size,
+                checksum,
+            },
+            operator_id: userId
+        });
+        return team;
+    } finally {
+        removeTempFile();
+    }
 };
 
 const transferCaptain = async (tid, userId, teamId, playerId) => {
@@ -614,6 +684,7 @@ module.exports = {
     kickPlayer,
     resetInviteCode,
     updateTeamInfo,
+    uploadTeamAvatar,
     transferCaptain,
     updatePlayerByHost,
     updateTeamStatus,

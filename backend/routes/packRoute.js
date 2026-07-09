@@ -11,6 +11,9 @@ router.get('/', PackController.getAllPacks)
 // 获取指定包信息
 router.get('/:pack_id', PackController.getPackById)
 
+// 删除图包
+router.delete('/:pack_id', checkAuth([ROLES.ADMIN]), PackController.deletePack)
+
 // 创建图包
 router.post('/', checkAuth(), PackController.createPack)
 

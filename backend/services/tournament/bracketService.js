@@ -15,20 +15,39 @@ const makeError = (message, status = 400) => {
     return error;
 };
 
+const RO32_SEED_PAIRS = [
+    [1, 32],
+    [16, 17],
+    [8, 25],
+    [9, 24],
+    [4, 29],
+    [13, 20],
+    [5, 28],
+    [12, 21],
+    [2, 31],
+    [15, 18],
+    [7, 26],
+    [10, 23],
+    [3, 30],
+    [14, 19],
+    [6, 27],
+    [11, 22]
+];
+
 const ROUND_DEFINITIONS = [
     { key: 'W1', name: 'Winners RO32', bracket_type: 0, bracket_group: 'winner', round_no: 1, match_count: 16, first_to: 5 },
     { key: 'W2', name: 'Winners RO16', bracket_type: 0, bracket_group: 'winner', round_no: 2, match_count: 8, first_to: 5 },
-    { key: 'W3', name: 'Winners Quarterfinals', bracket_type: 0, bracket_group: 'winner', round_no: 3, match_count: 4, first_to: 5 },
-    { key: 'W4', name: 'Winners Semifinals', bracket_type: 0, bracket_group: 'winner', round_no: 4, match_count: 2, first_to: 7 },
+    { key: 'W3', name: 'Winners Quarterfinals', bracket_type: 0, bracket_group: 'winner', round_no: 3, match_count: 4, first_to: 6 },
+    { key: 'W4', name: 'Winners Semifinals', bracket_type: 0, bracket_group: 'winner', round_no: 4, match_count: 2, first_to: 6 },
     { key: 'W5', name: 'Winners Finals', bracket_type: 0, bracket_group: 'winner', round_no: 5, match_count: 1, first_to: 7 },
-    { key: 'L1', name: 'Losers Round 1', bracket_type: 1, bracket_group: 'loser', round_no: 1, match_count: 8, first_to: 5 },
-    { key: 'L2', name: 'Losers Round 2', bracket_type: 1, bracket_group: 'loser', round_no: 2, match_count: 8, first_to: 5 },
-    { key: 'L3', name: 'Losers Round 3', bracket_type: 1, bracket_group: 'loser', round_no: 3, match_count: 4, first_to: 5 },
-    { key: 'L4', name: 'Losers Round 4', bracket_type: 1, bracket_group: 'loser', round_no: 4, match_count: 4, first_to: 5 },
-    { key: 'L5', name: 'Losers Round 5', bracket_type: 1, bracket_group: 'loser', round_no: 5, match_count: 2, first_to: 7 },
-    { key: 'L6', name: 'Losers Round 6', bracket_type: 1, bracket_group: 'loser', round_no: 6, match_count: 2, first_to: 7 },
-    { key: 'L7', name: 'Losers Semifinals', bracket_type: 1, bracket_group: 'loser', round_no: 7, match_count: 1, first_to: 7 },
-    { key: 'L8', name: 'Losers Finals', bracket_type: 1, bracket_group: 'loser', round_no: 8, match_count: 1, first_to: 7 },
+    { key: 'L1', name: 'Losers RO16', bracket_type: 1, bracket_group: 'loser', round_no: 1, match_count: 8, first_to: 5 },
+    { key: 'L2', name: 'Losers Quarterfinals A', bracket_type: 1, bracket_group: 'loser', round_no: 2, match_count: 8, first_to: 6 },
+    { key: 'L3', name: 'Losers Quarterfinals B', bracket_type: 1, bracket_group: 'loser', round_no: 3, match_count: 4, first_to: 6 },
+    { key: 'L4', name: 'Losers Semifinals A', bracket_type: 1, bracket_group: 'loser', round_no: 4, match_count: 4, first_to: 6 },
+    { key: 'L5', name: 'Losers Semifinals B', bracket_type: 1, bracket_group: 'loser', round_no: 5, match_count: 2, first_to: 6 },
+    { key: 'L6', name: 'Losers Finals A', bracket_type: 1, bracket_group: 'loser', round_no: 6, match_count: 2, first_to: 7 },
+    { key: 'L7', name: 'Losers Finals B', bracket_type: 1, bracket_group: 'loser', round_no: 7, match_count: 1, first_to: 7 },
+    { key: 'L8', name: 'Losers Grand Finals', bracket_type: 1, bracket_group: 'loser', round_no: 8, match_count: 1, first_to: 7 },
     { key: 'GF', name: 'Grand Finals', bracket_type: 2, bracket_group: 'grand_final', round_no: 1, match_count: 1, first_to: 7 },
     { key: 'GFR', name: 'Grand Finals Reset', bracket_type: 3, bracket_group: 'reset_final', round_no: 1, match_count: 1, first_to: 7, hidden: true }
 ];
@@ -85,7 +104,7 @@ const createMatch = async (roundByKey, roundKey, slotNo, payload, transaction) =
         round_id: round.id,
         team1_id: payload.team1_id || null,
         team2_id: payload.team2_id || null,
-        scheduled_time: payload.scheduled_time || new Date(),
+        scheduled_time: payload.scheduled_time || createDefaultScheduledTime(),
         status: payload.status || 0,
         winner_id: payload.winner_id || null,
         is_possible: payload.is_possible || 0,
@@ -100,15 +119,26 @@ const createMatch = async (roundByKey, roundKey, slotNo, payload, transaction) =
     }, { transaction });
 };
 
+const createDefaultScheduledTime = () => {
+    const tenMinutes = 10 * 60 * 1000;
+    return new Date(Math.round(Date.now() / tenMinutes) * tenMinutes);
+};
+
 const createWinnerBracket = async (roundByKey, teams, transaction) => {
     const matchesByRound = new Map();
+    const teamByQualRank = new Map();
+    for (const team of teams) {
+        teamByQualRank.set(Number(team.qual_rank), team);
+    }
 
     const w1 = [];
-    for (let i = 0; i < BRACKET_SIZE / 2; i++) {
-        const seed1 = i + 1;
-        const seed2 = BRACKET_SIZE - i;
-        const team1 = teams[seed1 - 1];
-        const team2 = teams[seed2 - 1];
+    for (let i = 0; i < RO32_SEED_PAIRS.length; i++) {
+        const [seed1, seed2] = RO32_SEED_PAIRS[i];
+        const team1 = teamByQualRank.get(seed1);
+        const team2 = teamByQualRank.get(seed2);
+        if (!team1 || !team2) {
+            throw makeError(`缺少资格赛 #${team1 ? seed2 : seed1} 队伍，无法生成 RO32`);
+        }
         const match = await createMatch(roundByKey, 'W1', i + 1, {
             team1_id: team1.id,
             team2_id: team2.id
@@ -158,10 +188,10 @@ const createLoserBracket = async (roundByKey, winnerRounds, transaction) => {
     const l2 = [];
     for (let i = 0; i < 8; i++) {
         l2.push(await createMatch(roundByKey, 'L2', i + 1, {
-            source_match_1_id: l1[i].id,
-            source_match_1_result: 'winner',
-            source_match_2_id: w2[i].id,
-            source_match_2_result: 'loser'
+            source_match_1_id: w2[i].id,
+            source_match_1_result: 'loser',
+            source_match_2_id: l1[7 - i].id,
+            source_match_2_result: 'winner'
         }, transaction));
     }
     loserRounds.set('L2', l2);
@@ -169,21 +199,22 @@ const createLoserBracket = async (roundByKey, winnerRounds, transaction) => {
     const l3 = [];
     for (let i = 0; i < 4; i++) {
         l3.push(await createMatch(roundByKey, 'L3', i + 1, {
-            source_match_1_id: l2[i * 2].id,
+            source_match_1_id: l2[i * 2 + 1].id,
             source_match_1_result: 'winner',
-            source_match_2_id: l2[i * 2 + 1].id,
+            source_match_2_id: l2[i * 2].id,
             source_match_2_result: 'winner'
         }, transaction));
     }
     loserRounds.set('L3', l3);
 
     const l4 = [];
+    const l3DropOrder = [2, 3, 0, 1];
     for (let i = 0; i < 4; i++) {
         l4.push(await createMatch(roundByKey, 'L4', i + 1, {
-            source_match_1_id: l3[i].id,
-            source_match_1_result: 'winner',
-            source_match_2_id: w3[i].id,
-            source_match_2_result: 'loser'
+            source_match_1_id: w3[i].id,
+            source_match_1_result: 'loser',
+            source_match_2_id: l3[l3DropOrder[i]].id,
+            source_match_2_result: 'winner'
         }, transaction));
     }
     loserRounds.set('L4', l4);
@@ -191,9 +222,9 @@ const createLoserBracket = async (roundByKey, winnerRounds, transaction) => {
     const l5 = [];
     for (let i = 0; i < 2; i++) {
         l5.push(await createMatch(roundByKey, 'L5', i + 1, {
-            source_match_1_id: l4[i * 2].id,
+            source_match_1_id: l4[i * 2 + 1].id,
             source_match_1_result: 'winner',
-            source_match_2_id: l4[i * 2 + 1].id,
+            source_match_2_id: l4[i * 2].id,
             source_match_2_result: 'winner'
         }, transaction));
     }
@@ -202,27 +233,27 @@ const createLoserBracket = async (roundByKey, winnerRounds, transaction) => {
     const l6 = [];
     for (let i = 0; i < 2; i++) {
         l6.push(await createMatch(roundByKey, 'L6', i + 1, {
-            source_match_1_id: l5[i].id,
-            source_match_1_result: 'winner',
-            source_match_2_id: w4[i].id,
-            source_match_2_result: 'loser'
+            source_match_1_id: w4[i].id,
+            source_match_1_result: 'loser',
+            source_match_2_id: l5[1 - i].id,
+            source_match_2_result: 'winner'
         }, transaction));
     }
     loserRounds.set('L6', l6);
 
     const l7 = [await createMatch(roundByKey, 'L7', 1, {
-        source_match_1_id: l6[0].id,
+        source_match_1_id: l6[1].id,
         source_match_1_result: 'winner',
-        source_match_2_id: l6[1].id,
+        source_match_2_id: l6[0].id,
         source_match_2_result: 'winner'
     }, transaction)];
     loserRounds.set('L7', l7);
 
     const l8 = [await createMatch(roundByKey, 'L8', 1, {
-        source_match_1_id: l7[0].id,
-        source_match_1_result: 'winner',
-        source_match_2_id: w5[0].id,
-        source_match_2_result: 'loser'
+        source_match_1_id: w5[0].id,
+        source_match_1_result: 'loser',
+        source_match_2_id: l7[0].id,
+        source_match_2_result: 'winner'
     }, transaction)];
     loserRounds.set('L8', l8);
 

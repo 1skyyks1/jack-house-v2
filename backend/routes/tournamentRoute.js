@@ -82,6 +82,9 @@ router.get('/:tid/rounds', matchController.getRounds);
 // 对阵表
 router.get('/:tid/bracket', matchController.getBracket);
 
+// 正赛表现
+router.get('/:tid/performance', matchController.getPerformance);
+
 // 轮次图池
 router.get('/:tid/round/:roundId/mappool', matchController.getRoundMappool);
 
@@ -101,6 +104,9 @@ router.post('/:tid/team/:teamId/submit', authMiddleware(), teamController.submit
 // 修改队伍信息
 router.put('/:tid/team/:teamId/info', authMiddleware(), teamController.updateTeamInfo);
 
+// 上传队旗
+router.post('/:tid/team/:teamId/avatar', authMiddleware(), teamController.uploadTeamAvatar);
+
 // 转让队长
 router.post('/:tid/team/:teamId/transfer-captain', authMiddleware(), teamController.transferCaptain);
 
@@ -119,6 +125,9 @@ router.post('/', authMiddleware([ROLES.ADMIN]), tournamentController.createTourn
 
 // 更新赛事
 router.put('/:tid', authMiddleware(), isHost, tournamentController.updateTournament);
+
+// 上传默认队旗
+router.post('/:tid/default-team-avatar', authMiddleware(), isHost, tournamentController.uploadDefaultTeamAvatar);
 
 // 删除赛事
 router.delete('/:tid', authMiddleware(), isCreatorHost, tournamentController.deleteTournament);
@@ -177,6 +186,9 @@ router.post('/:tid/qualifier/calculate-ranking', authMiddleware(), isHost, quali
 // 锁定资格赛排名
 router.post('/:tid/qualifier/lock', authMiddleware(), isHost, qualifierController.lockQualifierRanking);
 
+// 解锁资格赛排名
+router.post('/:tid/qualifier/unlock', authMiddleware(), isHost, qualifierController.unlockQualifierRanking);
+
 // ========== 正赛管理路由 ==========
 // 创建轮次
 router.post('/:tid/round', authMiddleware(), isHost, matchController.createRound);
@@ -211,7 +223,7 @@ const refereeController = require('../controllers/tournament/refereeController')
 // 获取裁判工作台数据
 router.get('/:tid/referee/:matchId', authMiddleware(), isReferee, refereeController.getRefereeData);
 
-// 记录 Roll 点
+// 记录 Roll 胜方
 router.post('/:tid/referee/:matchId/roll', authMiddleware(), isReferee, refereeController.recordRoll);
 
 // 记录 Protect/Ban/Pick

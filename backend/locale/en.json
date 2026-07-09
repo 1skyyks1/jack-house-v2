@@ -49,7 +49,9 @@
     "createSuccess": "Pack created successfully",
     "updateTooFrequent": "This pack can only be updated once per day",
     "updateFailed": "Failed to update pack",
-    "updateSuccess": "Pack updated successfully"
+    "updateSuccess": "Pack updated successfully",
+    "deleteSuccess": "Pack deleted successfully",
+    "deleteFailed": "Failed to delete pack"
   },
   "postComment": {
     "fetchFailed": "Failed to fetch comments",
@@ -259,6 +261,8 @@
       "mapperRequired": "Map mapper is required",
       "qualifierMapHasScores": "This qualifier map already has scores and cannot be deleted directly",
       "invalidTeamId": "Invalid team ID",
+      "invalidTeam": "Invalid team",
+      "invalidRoll": "Invalid roll winner",
       "qualifierMappoolEmpty": "Qualifier mappool is empty",
       "teamMemberOsuMissing": "Team member has not bound osu! account",
       "tournamentMemberOsuMissing": "Tournament team member has not bound osu! account",

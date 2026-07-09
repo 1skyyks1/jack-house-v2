@@ -380,7 +380,7 @@ const fetchQualScoresFromMp = async (tid, body, operatorId) => {
             const sourceGameId = osuMatchService.getGameId(game, event);
 
             for (const score of osuMatchService.getGameScores(game)) {
-                const entry = playerByOsuUid.get(Number(score.user_id));
+                const entry = playerByOsuUid.get(osuMatchService.getScoreUserId(score));
                 if (!entry?.player || !entry?.team) continue;
 
                 const player = entry.player;
@@ -587,7 +587,7 @@ const calculateRanking = async (tid, operatorId) => {
         ? buildRankSumRanking(teamScores, qualMaps)
         : buildTotalScoreRanking(teamScores, qualMaps);
     const rankedTeamIds = new Set(ranking.map(entry => entry.team.id));
-    assignCompetitionRanks(ranking);
+    assignQualifierRanks(ranking, rankMode);
 
     for (let i = 0; i < ranking.length; i++) {
         const team = ranking[i].team;
@@ -660,6 +660,17 @@ const assignCompetitionRanks = (ranking) => {
         }
         entry.rank = currentRank;
     }
+};
+
+const assignQualifierRanks = (ranking, rankMode) => {
+    if (rankMode === QUAL_RANK_MODE_RANK_SUM) {
+        for (let index = 0; index < ranking.length; index++) {
+            ranking[index].rank = index + 1;
+        }
+        return;
+    }
+
+    assignCompetitionRanks(ranking);
 };
 
 const buildRankSumRanking = (teamScores, qualMaps) => {
@@ -812,6 +823,34 @@ const lockQualifierRanking = async (tid, operatorId) => {
     };
 };
 
+const unlockQualifierRanking = async (tid, operatorId) => {
+    const tournament = await ensureTournament(tid);
+    if (!tournament.qual_locked_at) {
+        throw makeError('资格赛排名未锁定');
+    }
+
+    const oldValue = auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']);
+    tournament.qual_locked_at = null;
+    tournament.qual_locked_by = null;
+    tournament.qual_locked_top_n = null;
+    await tournament.save();
+
+    await auditService.writeAuditLog({
+        t_id: tid,
+        entity_type: 'qualifier',
+        entity_id: null,
+        action: 'unlock_ranking',
+        old_value: oldValue,
+        new_value: auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']),
+        operator_id: operatorId
+    });
+
+    return {
+        message: '资格赛排名已解锁',
+        tournament
+    };
+};
+
 module.exports = {
     assertQualifierUnlocked,
     calculateRanking,
@@ -822,6 +861,7 @@ module.exports = {
     listImports,
     listQualScores,
     lockQualifierRanking,
+    unlockQualifierRanking,
     updateQualMap,
     updateQualScore
 };

@@ -14,20 +14,37 @@ const canManageHost = (operator, tournament) => {
     return operator?.role === 2 || Number(tournament?.created_by) === Number(operator?.user_id);
 };
 
+const normalizeString = (value) => {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim();
+    return normalized || null;
+};
+
+const normalizeNullableNumber = (value, fieldName) => {
+    if (value === undefined || value === null || value === '') return null;
+    const number = Number(value);
+    if (!Number.isInteger(number)) {
+        throw makeError(`${fieldName} 必须是整数`);
+    }
+    return number;
+};
+
+const osuAvatarUrl = (osuUid) => {
+    const normalized = normalizeNullableNumber(osuUid, 'osu_uid');
+    return normalized ? `https://a.ppy.sh/${normalized}` : null;
+};
+
 const listStaff = async (tid) => {
     return TStaff.findAll({
         where: { t_id: tid },
-        include: [{ model: User, as: 'user', attributes: ['user_id', 'user_name', 'avatar'] }]
+        include: [{ model: User, as: 'user', attributes: ['user_id', 'user_name', 'avatar', 'osu_uid'] }]
     });
 };
 
 const addStaff = async (tid, body, operator, tournament) => {
-    const userId = Number(body.user_id);
+    let userId = normalizeNullableNumber(body.user_id, 'user_id');
     const role = body.role;
 
-    if (!Number.isInteger(userId)) {
-        throw makeError('用户 ID 无效');
-    }
     if (!STAFF_ROLES.has(role)) {
         throw makeError('无效的角色');
     }
@@ -35,9 +52,36 @@ const addStaff = async (tid, body, operator, tournament) => {
         throw makeError('只有创建者 host 可以添加其他 host', 403);
     }
 
-    const user = await User.findByPk(userId, { attributes: ['user_id'] });
-    if (!user) {
-        throw makeError('用户不存在', 404);
+    let user = null;
+    if (userId) {
+        user = await User.findByPk(userId, { attributes: ['user_id', 'user_name', 'avatar', 'osu_uid'] });
+        if (!user) {
+            throw makeError('用户不存在', 404);
+        }
+    } else {
+        const osuUid = normalizeNullableNumber(body.osu_uid, 'osu_uid');
+        if (!osuUid) {
+            throw makeError('user_id 或 osu_uid 至少需要一个');
+        }
+        user = await User.findOne({ where: { osu_uid: osuUid }, attributes: ['user_id', 'user_name', 'avatar', 'osu_uid'] });
+        if (!user) {
+            const userName = normalizeString(body.user_name);
+            if (!userName) {
+                throw makeError('导入非站内 staff 时 user_name 不能为空');
+            }
+            user = await User.create({
+                user_name: userName,
+                password: null,
+                email: null,
+                avatar: normalizeString(body.avatar) || osuAvatarUrl(osuUid),
+                role: 0,
+                status: 0,
+                osu_uid: osuUid,
+                qq: null,
+                discord: null
+            });
+        }
+        userId = user.user_id;
     }
 
     const existingPlayer = await TPlayer.findOne({ where: { t_id: tid, user_id: userId } });
@@ -61,7 +105,9 @@ const addStaff = async (tid, body, operator, tournament) => {
         operator_id: operator?.user_id
     });
 
-    return staff;
+    return TStaff.findByPk(staff.id, {
+        include: [{ model: User, as: 'user', attributes: ['user_id', 'user_name', 'avatar', 'osu_uid'] }]
+    });
 };
 
 const removeStaff = async (tid, staffId, operator, tournament) => {

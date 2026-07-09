@@ -49,7 +49,9 @@
     "createSuccess": "图包创建成功",
     "updateFailed": "更新失败",
     "updateSuccess": "更新成功",
-    "updateTooFrequent": "该图包今天已更新，请明天再试"
+    "updateTooFrequent": "该图包今天已更新，请明天再试",
+    "deleteSuccess": "图包删除成功",
+    "deleteFailed": "删除图包失败"
   },
   "postComment": {
     "fetchFailed": "获取评论失败",
@@ -259,6 +261,8 @@
       "mapperRequired": "谱面 mapper 不能为空",
       "qualifierMapHasScores": "该资格赛图已有成绩，不能直接删除",
       "invalidTeamId": "队伍 ID 无效",
+      "invalidTeam": "队伍无效",
+      "invalidRoll": "Roll 胜方无效",
       "qualifierMappoolEmpty": "资格赛图池为空",
       "teamMemberOsuMissing": "队伍成员未绑定 osu 账号",
       "tournamentMemberOsuMissing": "本届队伍成员未绑定 osu 账号",
@@ -319,7 +323,7 @@
       "playerRemoved": "已移除队员",
       "teamsApproved": "已批量通过",
       "scoresFetched": "分数获取完成",
-      "rollRecorded": "Roll 点已记录",
+      "rollRecorded": "Roll 胜方已记录",
       "actionRecorded": "操作已记录",
       "actionUpdated": "操作已更新",
       "timeoutRecorded": "暂停已记录",

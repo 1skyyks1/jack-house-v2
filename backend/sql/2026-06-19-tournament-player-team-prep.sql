@@ -91,7 +91,7 @@ CREATE INDEX `idx_t_mappool_round_type` ON `t_mappool` (`round_id`, `type`);
 CREATE TABLE `t_match_action` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `match_id` INT NOT NULL COMMENT '比赛id',
-  `action_type` VARCHAR(32) NOT NULL COMMENT 'roll/protect/ban/pick/score_import/score_edit/timeout/note',
+  `action_type` VARCHAR(32) NOT NULL COMMENT 'protect/ban/pick/score_import/score_edit/timeout/note',
   `team_id` INT NULL COMMENT '执行队伍id',
   `map_id` INT NULL COMMENT '关联正赛图池id',
   `value_json` TEXT NULL COMMENT '操作扩展数据 JSON',

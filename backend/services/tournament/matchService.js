@@ -1,6 +1,7 @@
 const { TMatch, TMappool, TRound, TTeam } = require('../../models/tournament');
 const auditService = require('./auditService');
 const bracketService = require('./bracketService');
+const roundStageService = require('./roundStageService');
 
 const MAIN_STAGE_MAP_TYPES = Object.freeze(['FU', 'DS', 'MD', 'LT', 'AC', 'QS', 'MN', 'RM', 'MX', 'DF', 'TB']);
 const MAIN_STAGE_MAP_TYPE_SET = new Set(MAIN_STAGE_MAP_TYPES);
@@ -207,7 +208,11 @@ const parseBeatmapUrl = (value) => {
 };
 
 const addRoundMap = async (tid, roundId, body, operatorId) => {
-    await ensureRoundInTournament(tid, roundId);
+    const { canonicalRound, rounds } = await roundStageService.getCanonicalRoundForStage(tid, roundId);
+    if (!canonicalRound) {
+        throw makeError('轮次不存在', 404);
+    }
+    const stageRoundIds = rounds.length > 0 ? rounds.map(round => round.id) : [canonicalRound.id];
 
     const parsedUrl = parseBeatmapUrl(body.url || body.beatmap_url);
     const mapId = normalizePositiveInt(body.map_id ?? parsedUrl.map_id, 'Beatmap ID');
@@ -229,15 +234,15 @@ const addRoundMap = async (tid, roundId, body, operatorId) => {
     const existing = await TMappool.findOne({
         where: {
             map_id: payload.map_id,
-            round_id: roundId
+            round_id: stageRoundIds
         }
     });
     if (existing) {
-        throw makeError('该轮次已存在此谱面');
+        throw makeError('该轮次图池已存在此谱面');
     }
 
     const map = await TMappool.create({
-        round_id: roundId,
+        round_id: canonicalRound.id,
         ...payload
     });
 
@@ -332,10 +337,10 @@ const updateMatch = async (tid, matchId, body, operatorId) => {
     const oldValue = auditService.pickModelValues(match, [
         'id', 'team1_id', 'team2_id', 'team1_score', 'team2_score',
         'winner_id', 'status', 'result_type', 'result_note', 'winner_overridden',
-        'mp_id', 'scheduled_time', 'is_possible'
+        'mp_id', 'scheduled_time', 'is_possible', 'roll_winner_id'
     ]);
 
-    const fields = ['mp_id', 'team1_roll', 'team2_roll', 'team1_score', 'team2_score',
+    const fields = ['mp_id', 'team1_score', 'team2_score',
         'scheduled_time', 'status', 'team1_timeout_used', 'team2_timeout_used',
         'is_possible', 'result_note', 'winner_overridden'];
     fields.forEach(field => {
@@ -344,6 +349,12 @@ const updateMatch = async (tid, matchId, body, operatorId) => {
 
     if (body.winner_id !== undefined) {
         match.winner_id = normalizeNullableInt(body.winner_id);
+    }
+    if (body.roll_winner_id !== undefined) {
+        match.roll_winner_id = normalizeNullableInt(body.roll_winner_id);
+        if (match.roll_winner_id && Number(match.roll_winner_id) !== Number(match.team1_id) && Number(match.roll_winner_id) !== Number(match.team2_id)) {
+            throw makeError('Roll 胜方不属于本场比赛');
+        }
     }
     if (body.result_type !== undefined) {
         match.result_type = normalizeResultType(body.result_type);
@@ -358,12 +369,13 @@ const updateMatch = async (tid, matchId, body, operatorId) => {
         if (!match.winner_id) {
             throw makeError('WBD/FF 需要指定胜方');
         }
+        const firstTo = roundStageService.getRoundFirstTo(match.round);
         if (Number(match.winner_id) === Number(match.team1_id)) {
-            match.team1_score = match.round.first_to;
+            match.team1_score = firstTo;
             match.team2_score = -1;
         } else {
             match.team1_score = -1;
-            match.team2_score = match.round.first_to;
+            match.team2_score = firstTo;
         }
         match.status = 2;
     }

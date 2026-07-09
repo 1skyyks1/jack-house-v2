@@ -21,7 +21,7 @@ const messageKeyMap = {
     '请先设置 MP 房间 ID': 'tournament.errors.mpIdRequired',
     '无法获取比赛数据': 'tournament.errors.fetchMatchFailed',
     '分数获取完成': 'tournament.messages.scoresFetched',
-    'Roll 点已记录': 'tournament.messages.rollRecorded',
+    'Roll 胜方已记录': 'tournament.messages.rollRecorded',
     '操作已记录': 'tournament.messages.actionRecorded',
     '操作已更新': 'tournament.messages.actionUpdated',
     '红队已用过暂停': 'tournament.errors.team1TimeoutUsed',

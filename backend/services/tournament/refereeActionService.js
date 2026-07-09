@@ -1,5 +1,6 @@
 const { TMatch, TMatchAction, TMappool, TRound } = require('../../models/tournament');
 const auditService = require('./auditService');
+const roundStageService = require('./roundStageService');
 
 const ACTION_TYPE_BY_LEGACY = {
     0: 'protect',
@@ -75,12 +76,10 @@ const resolveTeamId = (match, body) => {
 };
 
 const ensureMap = async (match, mapId) => {
-    const map = await TMappool.findOne({
-        where: { id: mapId },
-        include: [{ model: TRound, as: 'round', where: { t_id: match.round.t_id } }]
-    });
+    const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id);
+    const map = maps.find(item => Number(item.id) === Number(mapId)) || null;
     if (!map) {
-        throw makeError('图不存在或不属于本赛事');
+        throw makeError('图不存在或不属于本轮次图池');
     }
     return map;
 };
