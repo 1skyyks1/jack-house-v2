@@ -62,6 +62,10 @@ const TQualScore = sequelize.define('TQualScore', {
     tableName: 't_qual_score',
     timestamps: false,
     indexes: [
+        {
+            unique: true,
+            fields: ['map_id', 'team_id', 'player_id', 'source_mp_id', 'source_game_id']
+        },
         { fields: ['team_id', 'map_id'] },
         { fields: ['import_id'] },
         { fields: ['source_mp_id'] }

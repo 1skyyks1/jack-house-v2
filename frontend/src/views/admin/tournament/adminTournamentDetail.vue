@@ -115,6 +115,8 @@
               <el-select v-model="newStaffRole" style="width: 120px;">
                 <el-option value="referee" label="Referee" />
                 <el-option value="pooler" label="Pooler" />
+                <el-option value="custom_mapper" label="Custom Mapper" />
+                <el-option value="tester" label="Tester" />
                 <el-option value="streamer" label="Streamer" />
                 <el-option value="commentator" label="Commentator" />
               </el-select>

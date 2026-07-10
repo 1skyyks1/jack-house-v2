@@ -54,7 +54,7 @@ CREATE TABLE `t_staff` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `t_id` INT NOT NULL COMMENT '赛事id',
   `user_id` INT NOT NULL COMMENT '用户id',
-  `role` VARCHAR(32) NOT NULL COMMENT 'host/referee/pooler/streamer/commentator',
+  `role` VARCHAR(32) NOT NULL COMMENT 'host/pooler/custom_mapper/tester/referee/streamer/commentator',
   `created_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_t_staff_tid_user_role` (`t_id`, `user_id`, `role`)
@@ -246,6 +246,7 @@ CREATE TABLE `t_qual_score` (
   `is_manual` TINYINT NOT NULL DEFAULT 0 COMMENT '是否手动修正',
   `created_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_t_qual_score_source_game` (`map_id`, `team_id`, `player_id`, `source_mp_id`, `source_game_id`),
   KEY `idx_t_qual_score_team_map` (`team_id`, `map_id`),
   KEY `idx_t_qual_score_import` (`import_id`),
   KEY `idx_t_qual_score_source_mp` (`source_mp_id`)

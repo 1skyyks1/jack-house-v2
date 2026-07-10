@@ -9,7 +9,7 @@
     "cleanup:rich-text-assets": "node scripts/cleanup-rich-text-assets.js",
     "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/*.test.js"
   },
   "author": "",
   "license": "ISC",

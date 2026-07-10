@@ -33,6 +33,7 @@ const QUAL_RANK_MODE_TOTAL_SCORE = 0;
 const QUAL_RANK_MODE_RANK_SUM = 1;
 const TEAM_AVATAR_STORAGE_SCOPE = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_SCOPE || (process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_PROVIDER ? 'TOURNAMENT_TEAM_AVATAR' : 'RICHTEXT');
 const TEAM_AVATAR_STORAGE_BUCKET = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_BUCKET || 'tournament-team-avatars';
+const TOURNAMENT_AUDIT_IDENTITY_FIELDS = ['id', 'name', 'acronym', 'status'];
 
 const makeError = (message, status = 400) => {
     const error = new Error(message);
@@ -107,8 +108,8 @@ const createTournament = async (body, operatorId) => {
             action: 'create',
             old_value: null,
             new_value: {
-                tournament: auditService.pickModelValues(tournament),
-                creator_host: auditService.pickModelValues(staff)
+                tournament: auditService.pickModelValues(tournament, TOURNAMENT_AUDIT_IDENTITY_FIELDS),
+                creator_host_id: staff.id
             },
             operator_id: operatorId
         }, { transaction });
@@ -118,30 +119,35 @@ const createTournament = async (body, operatorId) => {
 };
 
 const updateTournament = async (tid, body, operatorId) => {
-    const tournament = await Tournament.findByPk(tid);
-    if (!tournament) {
-        throw makeError('赛事不存在', 404);
-    }
-
     const patch = pickFields(body, UPDATE_FIELDS);
     if (body.qual_rank_mode !== undefined) {
         patch.qual_rank_mode = normalizeQualRankMode(body.qual_rank_mode);
     }
 
-    const oldValue = auditService.pickModelValues(tournament);
-    await tournament.update(patch);
+    return sequelize.transaction(async (transaction) => {
+        const tournament = await Tournament.findByPk(tid, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!tournament) {
+            throw makeError('赛事不存在', 404);
+        }
 
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'tournament',
-        entity_id: tournament.id,
-        action: 'update',
-        old_value: oldValue,
-        new_value: auditService.pickModelValues(tournament),
-        operator_id: operatorId
+        const oldValue = auditService.pickModelValues(tournament);
+        await tournament.update(patch, { transaction });
+
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'tournament',
+            entity_id: tournament.id,
+            action: 'update',
+            old_value: oldValue,
+            new_value: auditService.pickModelValues(tournament),
+            operator_id: operatorId
+        }, { transaction });
+
+        return tournament;
     });
-
-    return tournament;
 };
 
 const uploadDefaultTeamAvatar = async (tid, file, operatorId) => {
@@ -172,49 +178,64 @@ const uploadDefaultTeamAvatar = async (tid, file, operatorId) => {
             size: optimized.size,
         });
         const avatarUrl = uploaded.publicUrl || uploaded.downloadUrl || uploaded.url;
-        const oldValue = auditService.pickModelValues(tournament);
-        await tournament.update({ default_team_avatar: avatarUrl || null });
+        return sequelize.transaction(async (transaction) => {
+            const lockedTournament = await Tournament.findByPk(tid, {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            if (!lockedTournament) {
+                throw makeError('赛事不存在', 404);
+            }
 
-        await auditService.writeAuditLog({
-            t_id: tid,
-            entity_type: 'tournament',
-            entity_id: tournament.id,
-            action: 'upload_default_team_avatar',
-            old_value: oldValue,
-            new_value: {
-                ...auditService.pickModelValues(tournament),
-                storage_provider: uploaded.provider,
-                object_key: uploaded.objectKey,
-                mime_type: uploaded.mimeType,
-                size: optimized.size,
-                checksum,
-            },
-            operator_id: operatorId
+            const oldValue = auditService.pickModelValues(lockedTournament);
+            await lockedTournament.update({ default_team_avatar: avatarUrl || null }, { transaction });
+
+            await auditService.writeAuditLog({
+                t_id: tid,
+                entity_type: 'tournament',
+                entity_id: lockedTournament.id,
+                action: 'upload_default_team_avatar',
+                old_value: oldValue,
+                new_value: {
+                    ...auditService.pickModelValues(lockedTournament),
+                    storage_provider: uploaded.provider,
+                    object_key: uploaded.objectKey,
+                    mime_type: uploaded.mimeType,
+                    size: optimized.size,
+                    checksum,
+                },
+                operator_id: operatorId
+            }, { transaction });
+
+            return lockedTournament;
         });
-
-        return tournament;
     } finally {
         removeTempFile();
     }
 };
 
 const deleteTournament = async (tid, operatorId) => {
-    const tournament = await Tournament.findByPk(tid);
-    if (!tournament) {
-        throw makeError('赛事不存在', 404);
-    }
+    return sequelize.transaction(async (transaction) => {
+        const tournament = await Tournament.findByPk(tid, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!tournament) {
+            throw makeError('赛事不存在', 404);
+        }
 
-    const oldValue = auditService.pickModelValues(tournament);
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'tournament',
-        entity_id: tournament.id,
-        action: 'delete',
-        old_value: oldValue,
-        new_value: null,
-        operator_id: operatorId
+        const oldValue = auditService.pickModelValues(tournament, TOURNAMENT_AUDIT_IDENTITY_FIELDS);
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'tournament',
+            entity_id: tournament.id,
+            action: 'delete',
+            old_value: oldValue,
+            new_value: null,
+            operator_id: operatorId
+        }, { transaction });
+        await tournament.destroy({ transaction });
     });
-    await tournament.destroy();
 };
 
 module.exports = {

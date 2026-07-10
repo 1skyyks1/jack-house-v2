@@ -1,4 +1,5 @@
 const { TSection, Tournament } = require('../../models/tournament');
+const sequelize = require('../../config/db');
 const auditService = require('./auditService');
 const MarkdownIt = require('markdown-it');
 const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
@@ -6,6 +7,19 @@ const { syncRichTextAssetReferences } = require('../richTextAssetService');
 
 const ALLOWED_FORMATS = new Set(['markdown', 'html']);
 const SECTION_TYPE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
+const SECTION_AUDIT_FIELDS = ['type', 'title', 'format', 'sort_order'];
+const SECTION_CONTENT_FIELDS = [
+    'source_markdown', 'source_markdown_zh', 'source_markdown_en',
+    'content_html', 'content_html_zh', 'content_html_en'
+];
+
+const buildSectionAuditValue = section => auditService.pickModelValues(section, SECTION_AUDIT_FIELDS);
+const getChangedSectionContentFields = (section, payload) => {
+    const relevantFields = payload.format === 'markdown'
+        ? SECTION_CONTENT_FIELDS.filter(field => field.startsWith('source_markdown'))
+        : SECTION_CONTENT_FIELDS.filter(field => field.startsWith('content_html'));
+    return relevantFields.filter(field => String(section[field] || '') !== String(payload[field] || ''));
+};
 
 const slugifyHeading = (text = '') => String(text)
     .toLowerCase()
@@ -137,95 +151,112 @@ const listPublicSections = async (tid, type) => {
 const createSection = async (tid, body, userId) => {
     await ensureTournamentExists(tid);
     const payload = normalizeSectionPayload(body);
-    const section = await TSection.create({
-        ...payload,
-        t_id: tid,
-        updated_by: userId
+    return sequelize.transaction(async (transaction) => {
+        const section = await TSection.create({
+            ...payload,
+            t_id: tid,
+            updated_by: userId
+        }, { transaction });
+        await syncRichTextAssetReferences({
+            contentType: 't_section',
+            contentId: section.id,
+            html: [section.content_html, section.content_html_zh, section.content_html_en].filter(Boolean).join('\n'),
+            transaction
+        });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'section',
+            entity_id: section.id,
+            action: 'create',
+            new_value: buildSectionAuditValue(section),
+            operator_id: userId
+        }, { transaction });
+        return section;
     });
-    await syncRichTextAssetReferences({
-        contentType: 't_section',
-        contentId: section.id,
-        html: [section.content_html, section.content_html_zh, section.content_html_en].filter(Boolean).join('\n'),
-    });
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'section',
-        entity_id: section.id,
-        action: 'create',
-        new_value: section,
-        operator_id: userId
-    });
-    return section;
 };
 
 const updateSection = async (tid, sectionId, body, userId) => {
     await ensureTournamentExists(tid);
-    const section = await TSection.findOne({ where: { id: sectionId, t_id: tid } });
-    if (!section) {
-        const error = new Error('内容不存在');
-        error.status = 404;
-        throw error;
-    }
+    return sequelize.transaction(async (transaction) => {
+        const section = await TSection.findOne({
+            where: { id: sectionId, t_id: tid },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!section) {
+            const error = new Error('内容不存在');
+            error.status = 404;
+            throw error;
+        }
 
-    const payload = normalizeSectionPayload({
-        type: body.type ?? section.type,
-        title: body.title ?? section.title,
-        title_zh: body.title_zh ?? section.title_zh,
-        title_en: body.title_en ?? section.title_en,
-        format: body.format ?? section.format,
-        source_markdown: body.source_markdown ?? section.source_markdown,
-        source_markdown_zh: body.source_markdown_zh ?? section.source_markdown_zh,
-        source_markdown_en: body.source_markdown_en ?? section.source_markdown_en,
-        content_html: body.content_html ?? section.content_html,
-        content_html_zh: body.content_html_zh ?? section.content_html_zh,
-        content_html_en: body.content_html_en ?? section.content_html_en,
-        sort_order: body.sort_order ?? section.sort_order
-    });
+        const payload = normalizeSectionPayload({
+            type: body.type ?? section.type,
+            title: body.title ?? section.title,
+            title_zh: body.title_zh ?? section.title_zh,
+            title_en: body.title_en ?? section.title_en,
+            format: body.format ?? section.format,
+            source_markdown: body.source_markdown ?? section.source_markdown,
+            source_markdown_zh: body.source_markdown_zh ?? section.source_markdown_zh,
+            source_markdown_en: body.source_markdown_en ?? section.source_markdown_en,
+            content_html: body.content_html ?? section.content_html,
+            content_html_zh: body.content_html_zh ?? section.content_html_zh,
+            content_html_en: body.content_html_en ?? section.content_html_en,
+            sort_order: body.sort_order ?? section.sort_order
+        });
 
-    const oldValue = auditService.pickModelValues(section);
-    await section.update({
-        ...payload,
-        updated_by: userId
+        const oldValue = buildSectionAuditValue(section);
+        const changedContentFields = getChangedSectionContentFields(section, payload);
+        await section.update({ ...payload, updated_by: userId }, { transaction });
+        await syncRichTextAssetReferences({
+            contentType: 't_section',
+            contentId: section.id,
+            html: [section.content_html, section.content_html_zh, section.content_html_en].filter(Boolean).join('\n'),
+            transaction
+        });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'section',
+            entity_id: section.id,
+            action: 'update',
+            old_value: oldValue,
+            new_value: changedContentFields.length > 0
+                ? { ...buildSectionAuditValue(section), changed_content_fields: changedContentFields }
+                : buildSectionAuditValue(section),
+            operator_id: userId
+        }, { transaction });
+        return section;
     });
-    await syncRichTextAssetReferences({
-        contentType: 't_section',
-        contentId: section.id,
-        html: [section.content_html, section.content_html_zh, section.content_html_en].filter(Boolean).join('\n'),
-    });
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'section',
-        entity_id: section.id,
-        action: 'update',
-        old_value: oldValue,
-        new_value: section,
-        operator_id: userId
-    });
-    return section;
 };
 
 const deleteSection = async (tid, sectionId, userId) => {
     await ensureTournamentExists(tid);
-    const section = await TSection.findOne({ where: { id: sectionId, t_id: tid } });
-    if (!section) {
-        const error = new Error('内容不存在');
-        error.status = 404;
-        throw error;
-    }
-    const oldValue = auditService.pickModelValues(section);
-    await syncRichTextAssetReferences({
-        contentType: 't_section',
-        contentId: section.id,
-        html: '',
-    });
-    await section.destroy();
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'section',
-        entity_id: section.id,
-        action: 'delete',
-        old_value: oldValue,
-        operator_id: userId
+    return sequelize.transaction(async (transaction) => {
+        const section = await TSection.findOne({
+            where: { id: sectionId, t_id: tid },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!section) {
+            const error = new Error('内容不存在');
+            error.status = 404;
+            throw error;
+        }
+        const oldValue = buildSectionAuditValue(section);
+        await syncRichTextAssetReferences({
+            contentType: 't_section',
+            contentId: section.id,
+            html: '',
+            transaction
+        });
+        await section.destroy({ transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'section',
+            entity_id: section.id,
+            action: 'delete',
+            old_value: oldValue,
+            operator_id: userId
+        }, { transaction });
     });
 };
 

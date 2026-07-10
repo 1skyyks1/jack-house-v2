@@ -206,7 +206,7 @@
       "roundNotFound": "轮次不存在",
       "registrationClosed": "不在报名时间内",
       "alreadyInTeam": "你已经在一支队伍中",
-      "staffCannotRegister": "赛事 staff 不能报名参赛，请先由 host 手动处理 staff 记录",
+      "staffCannotRegister": "Host、Pooler、Custom Mapper 和 Referee 不能与选手身份兼任",
       "osuNotBound": "请先绑定 osu 账号",
       "teamLocked": "队伍已锁定，无法修改成员",
       "teamNameRequired": "队伍名称不能为空",

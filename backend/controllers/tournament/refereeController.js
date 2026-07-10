@@ -1,5 +1,6 @@
 const { TMatch, TGame, TMappool, TRound, TTeam, TPlayer } = require('../../models/tournament');
 const User = require('../../models/user/user');
+const sequelize = require('../../config/db');
 const osu = require('osu-api-v2-js');
 const bracketService = require('../../services/tournament/bracketService');
 const refereeActionService = require('../../services/tournament/refereeActionService');
@@ -205,41 +206,50 @@ exports.recordRoll = async (req, res) => {
     try {
         const { tid, matchId } = req.params;
         const { winner_team_id } = req.body;
+        const result = await sequelize.transaction(async (transaction) => {
+            const match = await TMatch.findByPk(matchId, {
+                include: [{ model: TRound, as: 'round' }],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            if (!match || !isMatchInTournament(match, tid)) {
+                const error = new Error('比赛不存在');
+                error.status = 404;
+                throw error;
+            }
 
-        const match = await TMatch.findByPk(matchId, {
-            include: [{ model: TRound, as: 'round' }]
-        });
-        if (!match || !isMatchInTournament(match, tid)) {
-            return res.status(404).json({ message: req.t('tournament.errors.matchNotFound') });
-        }
+            const winnerTeamId = Number(winner_team_id);
+            if (winnerTeamId !== Number(match.team1_id) && winnerTeamId !== Number(match.team2_id)) {
+                const error = new Error('无效的 Roll 胜方');
+                error.status = 400;
+                throw error;
+            }
 
-        const winnerTeamId = Number(winner_team_id);
-        if (winnerTeamId !== Number(match.team1_id) && winnerTeamId !== Number(match.team2_id)) {
-            return res.status(400).json({ message: req.t('tournament.errors.invalidRoll') });
-        }
+            const oldValue = auditService.pickModelValues(match, ['id', 'roll_winner_id', 'status']);
+            match.roll_winner_id = winnerTeamId;
+            match.status = 1;
+            await match.save({ transaction });
 
-        const oldValue = auditService.pickModelValues(match, ['id', 'roll_winner_id', 'status']);
-        match.roll_winner_id = winnerTeamId;
-        match.status = 1; // 进行中
-        await match.save();
+            await auditService.writeAuditLog({
+                t_id: tid,
+                entity_type: 'match',
+                entity_id: match.id,
+                action: 'record_roll',
+                old_value: oldValue,
+                new_value: auditService.pickModelValues(match, ['id', 'roll_winner_id', 'status']),
+                operator_id: req.user?.user_id
+            }, { transaction });
 
-        await auditService.writeAuditLog({
-            t_id: tid,
-            entity_type: 'match',
-            entity_id: match.id,
-            action: 'record_roll',
-            old_value: oldValue,
-            new_value: auditService.pickModelValues(match, ['id', 'roll_winner_id', 'status']),
-            operator_id: req.user?.user_id
+            return { match, winnerTeamId };
         });
 
         res.json({
             message: req.t('tournament.messages.rollRecorded'),
-            roll_winner_id: winnerTeamId
+            roll_winner_id: result.winnerTeamId
         });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
@@ -271,45 +281,58 @@ exports.updateAction = async (req, res) => {
 exports.recordTimeout = async (req, res) => {
     try {
         const { tid, matchId } = req.params;
-        const { team } = req.body; // 1 or 2
-
-        const match = await TMatch.findByPk(matchId, {
-            include: [{ model: TRound, as: 'round' }]
-        });
-        if (!match || !isMatchInTournament(match, tid)) {
-            return res.status(404).json({ message: req.t('tournament.errors.matchNotFound') });
+        const team = Number(req.body.team);
+        if (team !== 1 && team !== 2) {
+            return res.status(400).json({ message: req.t('tournament.errors.actionTeamRequired') });
         }
 
-        const oldValue = auditService.pickModelValues(match, ['id', 'team1_timeout_used', 'team2_timeout_used']);
-        if (team === 1) {
-            if (match.team1_timeout_used) {
-                return res.status(400).json({ message: req.t('tournament.errors.team1TimeoutUsed') });
+        await sequelize.transaction(async (transaction) => {
+            const match = await TMatch.findByPk(matchId, {
+                include: [{ model: TRound, as: 'round' }],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            if (!match || !isMatchInTournament(match, tid)) {
+                const error = new Error('比赛不存在');
+                error.status = 404;
+                throw error;
             }
-            match.team1_timeout_used = 1;
-        } else {
-            if (match.team2_timeout_used) {
-                return res.status(400).json({ message: req.t('tournament.errors.team2TimeoutUsed') });
-            }
-            match.team2_timeout_used = 1;
-        }
 
-        await match.save();
-        await auditService.writeAuditLog({
-            t_id: tid,
-            entity_type: 'match',
-            entity_id: match.id,
-            action: 'record_timeout',
-            old_value: oldValue,
-            new_value: {
-                ...auditService.pickModelValues(match, ['id', 'team1_timeout_used', 'team2_timeout_used']),
-                team
-            },
-            operator_id: req.user?.user_id
+            const oldValue = auditService.pickModelValues(match, ['id', 'team1_timeout_used', 'team2_timeout_used']);
+            if (team === 1) {
+                if (match.team1_timeout_used) {
+                    const error = new Error('红队已用过暂停');
+                    error.status = 400;
+                    throw error;
+                }
+                match.team1_timeout_used = 1;
+            } else {
+                if (match.team2_timeout_used) {
+                    const error = new Error('蓝队已用过暂停');
+                    error.status = 400;
+                    throw error;
+                }
+                match.team2_timeout_used = 1;
+            }
+
+            await match.save({ transaction });
+            await auditService.writeAuditLog({
+                t_id: tid,
+                entity_type: 'match',
+                entity_id: match.id,
+                action: 'record_timeout',
+                old_value: oldValue,
+                new_value: {
+                    ...auditService.pickModelValues(match, ['id', 'team1_timeout_used', 'team2_timeout_used']),
+                    team
+                },
+                operator_id: req.user?.user_id
+            }, { transaction });
         });
         res.json({ message: req.t('tournament.messages.timeoutRecorded') });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 
@@ -317,84 +340,107 @@ exports.recordTimeout = async (req, res) => {
 exports.updateGameScore = async (req, res) => {
     try {
         const { tid, matchId, gameId } = req.params;
-        const { player1_id, player2_id, player1_score, player2_score } = req.body;
-
-        const matchForTournament = await TMatch.findByPk(matchId, {
-            include: [{ model: TRound, as: 'round' }]
-        });
-        if (!matchForTournament || !isMatchInTournament(matchForTournament, tid)) {
-            return res.status(404).json({ message: req.t('tournament.errors.matchNotFound') });
+        const { player1_id, player2_id } = req.body;
+        const player1Score = Number(req.body.player1_score);
+        const player2Score = Number(req.body.player2_score);
+        if (!Number.isFinite(player1Score) || !Number.isFinite(player2Score) || player1Score < 0 || player2Score < 0) {
+            return res.status(400).json({ message: req.t('tournament.errors.invalidScore') });
+        }
+        if (player1Score === player2Score) {
+            return res.status(400).json({ message: req.t('tournament.errors.invalidScore') });
         }
 
-        const game = await TGame.findOne({ where: { id: gameId, match_id: matchId } });
-        if (!game) {
-            return res.status(404).json({ message: req.t('tournament.errors.gameNotFound') });
-        }
-
-        const oldGameValue = auditService.pickModelValues(game);
-        const oldMatchValue = auditService.pickModelValues(matchForTournament, ['id', 'team1_score', 'team2_score', 'winner_id', 'status']);
-
-        game.player1_id = player1_id || game.player1_id;
-        game.player2_id = player2_id || game.player2_id;
-        game.player1_score = player1_score;
-        game.player2_score = player2_score;
-        game.winner_team = player1_score > player2_score ? 1 : 2;
-
-        await game.save();
-
-        // 更新比赛总分
-        const match = await TMatch.findByPk(matchId, {
-            include: [
-                { model: TGame, as: 'games', where: { action_type: 2 } }, // 只计算 pick 的局
-                { model: TRound, as: 'round' }
-            ]
-        });
-
-        if (match) {
-            let t1 = 0, t2 = 0;
-            for (const g of match.games || []) {
-                if (g.winner_team === 1) t1++;
-                else if (g.winner_team === 2) t2++;
+        const game = await sequelize.transaction(async (transaction) => {
+            const match = await TMatch.findByPk(matchId, {
+                include: [{ model: TRound, as: 'round' }],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            if (!match || !isMatchInTournament(match, tid)) {
+                const error = new Error('比赛不存在');
+                error.status = 404;
+                throw error;
             }
-            match.team1_score = t1;
-            match.team2_score = t2;
 
-            // 检查是否结束
+            const lockedGame = await TGame.findOne({
+                where: { id: gameId, match_id: matchId },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            if (!lockedGame) {
+                const error = new Error('对局不存在');
+                error.status = 404;
+                throw error;
+            }
+
+            const oldGameValue = auditService.pickModelValues(lockedGame);
+            const oldMatchValue = auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status']);
+            lockedGame.player1_id = player1_id || lockedGame.player1_id;
+            lockedGame.player2_id = player2_id || lockedGame.player2_id;
+            lockedGame.player1_score = Math.round(player1Score);
+            lockedGame.player2_score = Math.round(player2Score);
+            lockedGame.winner_team = player1Score > player2Score ? 1 : 2;
+            await lockedGame.save({ transaction });
+
+            const games = await TGame.findAll({
+                where: { match_id: matchId, action_type: 2 },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+            let team1Total = 0;
+            let team2Total = 0;
+            for (const item of games) {
+                if (item.winner_team === 1) team1Total++;
+                else if (item.winner_team === 2) team2Total++;
+            }
+
+            match.team1_score = team1Total;
+            match.team2_score = team2Total;
             const firstTo = roundStageService.getRoundFirstTo(match.round);
-            if (t1 >= firstTo) {
+            if (team1Total >= firstTo) {
                 match.winner_id = match.team1_id;
                 match.status = 2;
-            } else if (t2 >= firstTo) {
+            } else if (team2Total >= firstTo) {
                 match.winner_id = match.team2_id;
                 match.status = 2;
+            } else {
+                if (Number(oldMatchValue.status) === 2) {
+                    const error = new Error('已完成比赛不能通过单局改分重新打开');
+                    error.status = 409;
+                    throw error;
+                }
+                match.winner_id = null;
+                match.status = match.roll_winner_id ? 1 : 0;
             }
 
-            await match.save();
+            await match.save({ transaction });
             if (match.status === 2 && match.winner_id) {
-                await bracketService.propagateMatchResult(match.id, req.user?.user_id);
+                await bracketService.propagateMatchResult(match.id, req.user?.user_id, { transaction });
             }
 
             await auditService.writeAuditLog({
                 t_id: tid,
                 entity_type: 'game',
-                entity_id: game.id,
+                entity_id: lockedGame.id,
                 action: 'manual_score_update',
                 old_value: {
                     game: oldGameValue,
                     match: oldMatchValue
                 },
                 new_value: {
-                    game: auditService.pickModelValues(game),
+                    game: auditService.pickModelValues(lockedGame),
                     match: auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status'])
                 },
                 operator_id: req.user?.user_id
-            });
-        }
+            }, { transaction });
+
+            return lockedGame;
+        });
 
         res.json({ message: req.t('tournament.messages.scoreUpdated'), game });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
     }
 };
 

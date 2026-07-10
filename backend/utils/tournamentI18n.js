@@ -33,6 +33,7 @@ const messageKeyMap = {
     '不在报名时间内': 'tournament.errors.registrationClosed',
     '你已经在一支队伍中': 'tournament.errors.alreadyInTeam',
     '赛事 staff 不能报名参赛，请先由 host 手动处理 staff 记录': 'tournament.errors.staffCannotRegister',
+    '当前 Staff 角色不能与选手身份兼任': 'tournament.errors.staffCannotRegister',
     '用户不存在': 'user.notFound',
     '请先绑定 osu 账号': 'tournament.errors.osuNotBound',
     '队伍已锁定，无法修改成员': 'tournament.errors.teamLocked',

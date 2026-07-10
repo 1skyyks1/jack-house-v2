@@ -12,3 +12,13 @@ exports.getAuditLogs = async (req, res) => {
         handleError(res, req, error);
     }
 };
+
+exports.getAuditLog = async (req, res) => {
+    try {
+        const { tid, auditId } = req.params;
+        const log = await auditService.getAuditLog(tid, auditId);
+        res.json(log);
+    } catch (error) {
+        handleError(res, req, error);
+    }
+};

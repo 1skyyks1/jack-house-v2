@@ -20,7 +20,7 @@ const TStaff = sequelize.define('TStaff', {
     role: {
         type: DataTypes.STRING(32),
         allowNull: false,
-        comment: 'host/referee/pooler/streamer/commentator'
+        comment: 'host/pooler/custom_mapper/tester/referee/streamer/commentator'
     },
     created_time: {
         type: DataTypes.DATE,

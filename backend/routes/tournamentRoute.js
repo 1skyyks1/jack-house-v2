@@ -150,6 +150,7 @@ router.delete('/:tid/sections/:sectionId', authMiddleware(), isHost, contentCont
 
 // 审计日志
 router.get('/:tid/audit-logs', authMiddleware(), isHost, auditController.getAuditLogs);
+router.get('/:tid/audit-logs/:auditId', authMiddleware(), isHost, auditController.getAuditLog);
 
 // 历史赛事补录
 router.post('/:tid/import/teams', authMiddleware(), isHost, historicalImportController.importTeams);

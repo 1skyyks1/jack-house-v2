@@ -1,4 +1,5 @@
 const { TMatch, TMappool, TRound, TTeam } = require('../../models/tournament');
+const sequelize = require('../../config/db');
 const auditService = require('./auditService');
 const bracketService = require('./bracketService');
 const roundStageService = require('./roundStageService');
@@ -12,17 +13,17 @@ const makeError = (message, status = 400) => {
     return error;
 };
 
-const ensureRoundInTournament = async (tid, roundId) => {
-    const round = await TRound.findOne({ where: { id: roundId, t_id: tid } });
+const ensureRoundInTournament = async (tid, roundId, options = {}) => {
+    const round = await TRound.findOne({ where: { id: roundId, t_id: tid }, ...options });
     if (!round) {
         throw makeError('轮次不存在', 404);
     }
     return round;
 };
 
-const ensureTeamInTournament = async (tid, teamId, label = '队伍') => {
+const ensureTeamInTournament = async (tid, teamId, label = '队伍', options = {}) => {
     if (!teamId) return null;
-    const team = await TTeam.findOne({ where: { id: teamId, t_id: tid } });
+    const team = await TTeam.findOne({ where: { id: teamId, t_id: tid }, ...options });
     if (!team) {
         throw makeError(`${label}不存在或不属于本赛事`, 404);
     }
@@ -38,9 +39,10 @@ const normalizeNullableInt = (value) => {
     return normalized;
 };
 
-const ensureMatchInTournament = async (tid, matchId) => {
+const ensureMatchInTournament = async (tid, matchId, options = {}) => {
     const match = await TMatch.findByPk(matchId, {
-        include: [{ model: TRound, as: 'round' }]
+        include: [{ model: TRound, as: 'round' }],
+        ...options
     });
     if (!match || Number(match.round?.t_id) !== Number(tid)) {
         throw makeError('比赛不存在', 404);
@@ -115,63 +117,61 @@ const buildRoundPayload = (body, existingRound = null) => {
 
 const createRound = async (tid, body, operatorId) => {
     const payload = buildRoundPayload(body);
-    const round = await TRound.create({
-        t_id: tid,
-        ...payload
+    return sequelize.transaction(async (transaction) => {
+        const round = await TRound.create({ t_id: tid, ...payload }, { transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'round',
+            entity_id: round.id,
+            action: 'create',
+            old_value: null,
+            new_value: auditService.pickModelValues(round),
+            operator_id: operatorId
+        }, { transaction });
+        return round;
     });
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'round',
-        entity_id: round.id,
-        action: 'create',
-        old_value: null,
-        new_value: auditService.pickModelValues(round),
-        operator_id: operatorId
-    });
-
-    return round;
 };
 
 const updateRound = async (tid, roundId, body, operatorId) => {
-    const round = await ensureRoundInTournament(tid, roundId);
-    const oldValue = auditService.pickModelValues(round);
-    const payload = buildRoundPayload(body, round);
-    await round.update(payload);
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'round',
-        entity_id: round.id,
-        action: 'update',
-        old_value: oldValue,
-        new_value: auditService.pickModelValues(round),
-        operator_id: operatorId
+    return sequelize.transaction(async (transaction) => {
+        const round = await ensureRoundInTournament(tid, roundId, { transaction, lock: transaction.LOCK.UPDATE });
+        const oldValue = auditService.pickModelValues(round);
+        const payload = buildRoundPayload(body, round);
+        await round.update(payload, { transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'round',
+            entity_id: round.id,
+            action: 'update',
+            old_value: oldValue,
+            new_value: auditService.pickModelValues(round),
+            operator_id: operatorId
+        }, { transaction });
+        return round;
     });
-
-    return round;
 };
 
 const deleteRound = async (tid, roundId, operatorId) => {
-    const round = await ensureRoundInTournament(tid, roundId);
-    const [matchCount, mapCount] = await Promise.all([
-        TMatch.count({ where: { round_id: round.id } }),
-        TMappool.count({ where: { round_id: round.id } })
-    ]);
-    if (matchCount > 0 || mapCount > 0) {
-        throw makeError('轮次已有比赛或图池，不能直接删除；请先重建或清理相关数据');
-    }
-
-    const oldValue = auditService.pickModelValues(round);
-    await round.destroy();
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'round',
-        entity_id: round.id,
-        action: 'delete',
-        old_value: oldValue,
-        new_value: null,
-        operator_id: operatorId
+    return sequelize.transaction(async (transaction) => {
+        const round = await ensureRoundInTournament(tid, roundId, { transaction, lock: transaction.LOCK.UPDATE });
+        const [matchCount, mapCount] = await Promise.all([
+            TMatch.count({ where: { round_id: round.id }, transaction }),
+            TMappool.count({ where: { round_id: round.id }, transaction })
+        ]);
+        if (matchCount > 0 || mapCount > 0) {
+            throw makeError('轮次已有比赛或图池，不能直接删除；请先重建或清理相关数据');
+        }
+        const oldValue = auditService.pickModelValues(round);
+        await round.destroy({ transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'round',
+            entity_id: round.id,
+            action: 'delete',
+            old_value: oldValue,
+            new_value: null,
+            operator_id: operatorId
+        }, { transaction });
     });
 };
 
@@ -208,12 +208,6 @@ const parseBeatmapUrl = (value) => {
 };
 
 const addRoundMap = async (tid, roundId, body, operatorId) => {
-    const { canonicalRound, rounds } = await roundStageService.getCanonicalRoundForStage(tid, roundId);
-    if (!canonicalRound) {
-        throw makeError('轮次不存在', 404);
-    }
-    const stageRoundIds = rounds.length > 0 ? rounds.map(round => round.id) : [canonicalRound.id];
-
     const parsedUrl = parseBeatmapUrl(body.url || body.beatmap_url);
     const mapId = normalizePositiveInt(body.map_id ?? parsedUrl.map_id, 'Beatmap ID');
     const setId = normalizePositiveInt(body.set_id ?? parsedUrl.set_id, 'Beatmapset ID', null);
@@ -231,52 +225,50 @@ const addRoundMap = async (tid, roundId, body, operatorId) => {
         throw makeError('谱面 artist、title 和 mapper 不能为空');
     }
 
-    const existing = await TMappool.findOne({
-        where: {
-            map_id: payload.map_id,
-            round_id: stageRoundIds
-        }
-    });
-    if (existing) {
-        throw makeError('该轮次图池已存在此谱面');
-    }
+    return sequelize.transaction(async (transaction) => {
+        const { canonicalRound, rounds } = await roundStageService.getCanonicalRoundForStage(tid, roundId, { transaction });
+        if (!canonicalRound) throw makeError('轮次不存在', 404);
+        const stageRoundIds = rounds.length > 0 ? rounds.map(round => round.id) : [canonicalRound.id];
+        const existing = await TMappool.findOne({
+            where: { map_id: payload.map_id, round_id: stageRoundIds },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (existing) throw makeError('该轮次图池已存在此谱面');
 
-    const map = await TMappool.create({
-        round_id: canonicalRound.id,
-        ...payload
+        const map = await TMappool.create({ round_id: canonicalRound.id, ...payload }, { transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'round_mappool',
+            entity_id: map.id,
+            action: 'create',
+            old_value: null,
+            new_value: auditService.pickModelValues(map),
+            operator_id: operatorId
+        }, { transaction });
+        return map;
     });
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'round_mappool',
-        entity_id: map.id,
-        action: 'create',
-        old_value: null,
-        new_value: auditService.pickModelValues(map),
-        operator_id: operatorId
-    });
-
-    return map;
 };
 
 const deleteRoundMap = async (tid, mapId, operatorId) => {
-    const map = await TMappool.findByPk(mapId, {
-        include: [{ model: TRound, as: 'round' }]
-    });
-    if (!map || Number(map.round?.t_id) !== Number(tid)) {
-        throw makeError('图不存在', 404);
-    }
-
-    const oldValue = auditService.pickModelValues(map);
-    await map.destroy();
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'round_mappool',
-        entity_id: map.id,
-        action: 'delete',
-        old_value: oldValue,
-        new_value: null,
-        operator_id: operatorId
+    return sequelize.transaction(async (transaction) => {
+        const map = await TMappool.findByPk(mapId, {
+            include: [{ model: TRound, as: 'round' }],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!map || Number(map.round?.t_id) !== Number(tid)) throw makeError('图不存在', 404);
+        const oldValue = auditService.pickModelValues(map);
+        await map.destroy({ transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'round_mappool',
+            entity_id: map.id,
+            action: 'delete',
+            old_value: oldValue,
+            new_value: null,
+            operator_id: operatorId
+        }, { transaction });
     });
 };
 
@@ -285,36 +277,34 @@ const createMatch = async (tid, body, operatorId) => {
     if (!roundId) {
         throw makeError('缺少轮次');
     }
-    await ensureRoundInTournament(tid, roundId);
-
     const team1Id = normalizeNullableInt(body.team1_id);
     const team2Id = normalizeNullableInt(body.team2_id);
     if (team1Id && team2Id && team1Id === team2Id) {
         throw makeError('比赛双方不能是同一支队伍');
     }
-    await ensureTeamInTournament(tid, team1Id, '红队');
-    await ensureTeamInTournament(tid, team2Id, '蓝队');
-
-    const match = await TMatch.create({
-        round_id: roundId,
-        team1_id: team1Id,
-        team2_id: team2Id,
-        scheduled_time: body.scheduled_time || null,
-        is_possible: body.is_possible ? Number(body.is_possible) : 0,
-        status: 0
+    return sequelize.transaction(async (transaction) => {
+        await ensureRoundInTournament(tid, roundId, { transaction });
+        await ensureTeamInTournament(tid, team1Id, '红队', { transaction });
+        await ensureTeamInTournament(tid, team2Id, '蓝队', { transaction });
+        const match = await TMatch.create({
+            round_id: roundId,
+            team1_id: team1Id,
+            team2_id: team2Id,
+            scheduled_time: body.scheduled_time || null,
+            is_possible: body.is_possible ? Number(body.is_possible) : 0,
+            status: 0
+        }, { transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'match',
+            entity_id: match.id,
+            action: 'create',
+            old_value: null,
+            new_value: auditService.pickModelValues(match),
+            operator_id: operatorId
+        }, { transaction });
+        return match;
     });
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'match',
-        entity_id: match.id,
-        action: 'create',
-        old_value: null,
-        new_value: auditService.pickModelValues(match),
-        operator_id: operatorId
-    });
-
-    return match;
 };
 
 const normalizeResultType = (value) => {
@@ -333,76 +323,70 @@ const ensureWinnerBelongsToMatch = (match, winnerId) => {
 };
 
 const updateMatch = async (tid, matchId, body, operatorId) => {
-    const match = await ensureMatchInTournament(tid, matchId);
-    const oldValue = auditService.pickModelValues(match, [
-        'id', 'team1_id', 'team2_id', 'team1_score', 'team2_score',
-        'winner_id', 'status', 'result_type', 'result_note', 'winner_overridden',
-        'mp_id', 'scheduled_time', 'is_possible', 'roll_winner_id'
-    ]);
+    return sequelize.transaction(async (transaction) => {
+        const match = await ensureMatchInTournament(tid, matchId, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        const oldValue = auditService.pickModelValues(match, [
+            'id', 'team1_id', 'team2_id', 'team1_score', 'team2_score',
+            'winner_id', 'status', 'result_type', 'result_note', 'winner_overridden',
+            'mp_id', 'scheduled_time', 'is_possible', 'roll_winner_id'
+        ]);
 
-    const fields = ['mp_id', 'team1_score', 'team2_score',
-        'scheduled_time', 'status', 'team1_timeout_used', 'team2_timeout_used',
-        'is_possible', 'result_note', 'winner_overridden'];
-    fields.forEach(field => {
-        if (body[field] !== undefined) match[field] = body[field];
+        const fields = ['mp_id', 'team1_score', 'team2_score',
+            'scheduled_time', 'status', 'team1_timeout_used', 'team2_timeout_used',
+            'is_possible', 'result_note', 'winner_overridden'];
+        fields.forEach(field => {
+            if (body[field] !== undefined) match[field] = body[field];
+        });
+
+        if (body.winner_id !== undefined) match.winner_id = normalizeNullableInt(body.winner_id);
+        if (body.roll_winner_id !== undefined) {
+            match.roll_winner_id = normalizeNullableInt(body.roll_winner_id);
+            if (match.roll_winner_id && Number(match.roll_winner_id) !== Number(match.team1_id) && Number(match.roll_winner_id) !== Number(match.team2_id)) {
+                throw makeError('Roll 胜方不属于本场比赛');
+            }
+        }
+        if (body.result_type !== undefined) match.result_type = normalizeResultType(body.result_type);
+        if (!match.result_type) match.result_type = 'normal';
+
+        ensureWinnerBelongsToMatch(match, match.winner_id);
+        if (match.result_type === 'wbd' || match.result_type === 'ff') {
+            if (!match.winner_id) throw makeError('WBD/FF 需要指定胜方');
+            const firstTo = roundStageService.getRoundFirstTo(match.round);
+            if (Number(match.winner_id) === Number(match.team1_id)) {
+                match.team1_score = firstTo;
+                match.team2_score = -1;
+            } else {
+                match.team1_score = -1;
+                match.team2_score = firstTo;
+            }
+            match.status = 2;
+        }
+
+        await match.save({ transaction });
+        const newValue = auditService.pickModelValues(match, [
+            'id', 'team1_id', 'team2_id', 'team1_score', 'team2_score',
+            'winner_id', 'status', 'result_type', 'result_note', 'winner_overridden',
+            'mp_id', 'scheduled_time', 'is_possible'
+        ]);
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'match',
+            entity_id: match.id,
+            action: match.result_type === 'normal' ? 'update_match' : 'set_special_result',
+            old_value: oldValue,
+            new_value: newValue,
+            operator_id: operatorId
+        }, { transaction });
+
+        let propagation = null;
+        if (match.status === 2 && match.winner_id) {
+            propagation = await bracketService.propagateMatchResult(match.id, operatorId, { transaction });
+        }
+        return { match, propagation };
     });
-
-    if (body.winner_id !== undefined) {
-        match.winner_id = normalizeNullableInt(body.winner_id);
-    }
-    if (body.roll_winner_id !== undefined) {
-        match.roll_winner_id = normalizeNullableInt(body.roll_winner_id);
-        if (match.roll_winner_id && Number(match.roll_winner_id) !== Number(match.team1_id) && Number(match.roll_winner_id) !== Number(match.team2_id)) {
-            throw makeError('Roll 胜方不属于本场比赛');
-        }
-    }
-    if (body.result_type !== undefined) {
-        match.result_type = normalizeResultType(body.result_type);
-    }
-    if (!match.result_type) {
-        match.result_type = 'normal';
-    }
-
-    ensureWinnerBelongsToMatch(match, match.winner_id);
-
-    if (match.result_type === 'wbd' || match.result_type === 'ff') {
-        if (!match.winner_id) {
-            throw makeError('WBD/FF 需要指定胜方');
-        }
-        const firstTo = roundStageService.getRoundFirstTo(match.round);
-        if (Number(match.winner_id) === Number(match.team1_id)) {
-            match.team1_score = firstTo;
-            match.team2_score = -1;
-        } else {
-            match.team1_score = -1;
-            match.team2_score = firstTo;
-        }
-        match.status = 2;
-    }
-
-    await match.save();
-    const newValue = auditService.pickModelValues(match, [
-        'id', 'team1_id', 'team2_id', 'team1_score', 'team2_score',
-        'winner_id', 'status', 'result_type', 'result_note', 'winner_overridden',
-        'mp_id', 'scheduled_time', 'is_possible'
-    ]);
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'match',
-        entity_id: match.id,
-        action: match.result_type === 'normal' ? 'update_match' : 'set_special_result',
-        old_value: oldValue,
-        new_value: newValue,
-        operator_id: operatorId
-    });
-
-    let propagation = null;
-    if (match.status === 2 && match.winner_id) {
-        propagation = await bracketService.propagateMatchResult(match.id, operatorId);
-    }
-
-    return { match, propagation };
 };
 
 module.exports = {

@@ -60,6 +60,7 @@ const checkTournamentRole = (allowedRoles) => {
 const isHost = checkTournamentRole(['host']);
 const isReferee = checkTournamentRole(['host', 'referee']);
 const isPooler = checkTournamentRole(['host', 'pooler']);
+// custom_mapper and tester are display-only roles and intentionally grant no staff-gated access.
 const isStaff = checkTournamentRole(['host', 'referee', 'pooler', 'streamer', 'commentator']);
 
 const isCreatorHost = async (req, res, next) => {

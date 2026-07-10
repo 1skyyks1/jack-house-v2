@@ -1,4 +1,5 @@
 const { TMatch, TMatchAction, TMappool, TRound } = require('../../models/tournament');
+const sequelize = require('../../config/db');
 const auditService = require('./auditService');
 const roundStageService = require('./roundStageService');
 
@@ -47,9 +48,11 @@ const normalizeActionType = (actionType) => {
     return normalized;
 };
 
-const ensureMatch = async (matchId, tid = null) => {
+const ensureMatch = async (matchId, tid = null, options = {}) => {
     const match = await TMatch.findByPk(matchId, {
-        include: [{ model: TRound, as: 'round' }]
+        include: [{ model: TRound, as: 'round' }],
+        transaction: options.transaction,
+        lock: options.lock
     });
     if (!match) {
         throw makeError('比赛不存在', 404);
@@ -75,8 +78,8 @@ const resolveTeamId = (match, body) => {
     throw makeError('缺少执行队伍');
 };
 
-const ensureMap = async (match, mapId) => {
-    const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id);
+const ensureMap = async (match, mapId, options = {}) => {
+    const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id, options);
     const map = maps.find(item => Number(item.id) === Number(mapId)) || null;
     if (!map) {
         throw makeError('图不存在或不属于本轮次图池');
@@ -155,90 +158,108 @@ const listActions = async (matchId, tid = null) => {
 };
 
 const createAction = async (matchId, body, operatorId, tid = null) => {
-    const match = await ensureMatch(matchId, tid);
-    const actionType = normalizeActionType(body.action_type);
-    const teamId = resolveTeamId(match, body);
-    const map = await ensureMap(match, Number(body.map_id));
-    const actions = await TMatchAction.findAll({
-        where: { match_id: matchId },
-        order: [['sort_order', 'ASC'], ['id', 'ASC']]
+    return sequelize.transaction(async (transaction) => {
+        const match = await ensureMatch(matchId, tid, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        const actionType = normalizeActionType(body.action_type);
+        const teamId = resolveTeamId(match, body);
+        const map = await ensureMap(match, Number(body.map_id), { transaction });
+        const actions = await TMatchAction.findAll({
+            where: { match_id: matchId },
+            order: [['sort_order', 'ASC'], ['id', 'ASC']],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        const state = buildActionState(actions);
+        validateActionConflict(state, actionType, teamId, map.id);
+
+        const sortOrder = actions.length > 0
+            ? Math.max(...actions.map(action => action.sort_order || 0)) + 1
+            : 1;
+
+        const action = await TMatchAction.create({
+            match_id: matchId,
+            action_type: actionType,
+            team_id: teamId,
+            map_id: map.id,
+            value_json: stringifyValue({
+                legacy_action_type: body.action_type,
+                legacy_action_by: body.action_by,
+                note: body.note || null
+            }),
+            sort_order: sortOrder,
+            created_by: operatorId || null
+        }, { transaction });
+
+        await auditService.writeAuditLog({
+            t_id: match.round?.t_id,
+            entity_type: 'match_action',
+            entity_id: action.id,
+            action: 'create',
+            old_value: null,
+            new_value: auditService.pickModelValues(action),
+            operator_id: operatorId
+        }, { transaction });
+
+        return action;
     });
-    const state = buildActionState(actions);
-    validateActionConflict(state, actionType, teamId, map.id);
-
-    const sortOrder = actions.length > 0
-        ? Math.max(...actions.map(action => action.sort_order || 0)) + 1
-        : 1;
-
-    const action = await TMatchAction.create({
-        match_id: matchId,
-        action_type: actionType,
-        team_id: teamId,
-        map_id: map.id,
-        value_json: stringifyValue({
-            legacy_action_type: body.action_type,
-            legacy_action_by: body.action_by,
-            note: body.note || null
-        }),
-        sort_order: sortOrder,
-        created_by: operatorId || null
-    });
-
-    await auditService.writeAuditLog({
-        t_id: match.round?.t_id,
-        entity_type: 'match_action',
-        entity_id: action.id,
-        action: 'create',
-        old_value: null,
-        new_value: auditService.pickModelValues(action),
-        operator_id: operatorId
-    });
-
-    return action;
 };
 
 const updateAction = async (matchId, actionId, body, operatorId, tid = null) => {
-    const match = await ensureMatch(matchId, tid);
-    const action = await TMatchAction.findOne({ where: { id: actionId, match_id: matchId } });
-    if (!action) {
-        throw makeError('操作不存在', 404);
-    }
+    return sequelize.transaction(async (transaction) => {
+        const match = await ensureMatch(matchId, tid, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        const action = await TMatchAction.findOne({
+            where: { id: actionId, match_id: matchId },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!action) {
+            throw makeError('操作不存在', 404);
+        }
 
-    const oldValue = auditService.pickModelValues(action);
-    const actionType = body.action_type !== undefined ? normalizeActionType(body.action_type) : action.action_type;
-    const teamId = (body.team_id !== undefined || body.action_by !== undefined)
-        ? resolveTeamId(match, body)
-        : action.team_id;
-    const mapId = body.map_id !== undefined ? Number(body.map_id) : action.map_id;
-    const map = await ensureMap(match, mapId);
+        const oldValue = auditService.pickModelValues(action);
+        const actionType = body.action_type !== undefined ? normalizeActionType(body.action_type) : action.action_type;
+        const teamId = (body.team_id !== undefined || body.action_by !== undefined)
+            ? resolveTeamId(match, body)
+            : action.team_id;
+        const mapId = body.map_id !== undefined ? Number(body.map_id) : action.map_id;
+        const map = await ensureMap(match, mapId, { transaction });
 
-    const actions = await TMatchAction.findAll({
-        where: { match_id: matchId },
-        order: [['sort_order', 'ASC'], ['id', 'ASC']]
+        const actions = await TMatchAction.findAll({
+            where: { match_id: matchId },
+            order: [['sort_order', 'ASC'], ['id', 'ASC']],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        const state = buildActionState(actions, action.id);
+        validateActionConflict(state, actionType, teamId, map.id);
+
+        action.action_type = actionType;
+        action.team_id = teamId;
+        action.map_id = map.id;
+        action.value_json = stringifyValue({
+            ...parseValue(action),
+            note: body.note !== undefined ? body.note : parseValue(action).note || null
+        });
+        await action.save({ transaction });
+
+        await auditService.writeAuditLog({
+            t_id: match.round?.t_id,
+            entity_type: 'match_action',
+            entity_id: action.id,
+            action: 'update',
+            old_value: oldValue,
+            new_value: auditService.pickModelValues(action),
+            operator_id: operatorId
+        }, { transaction });
+
+        return action;
     });
-    const state = buildActionState(actions, action.id);
-    validateActionConflict(state, actionType, teamId, map.id);
-
-    action.action_type = actionType;
-    action.team_id = teamId;
-    action.map_id = map.id;
-    action.value_json = stringifyValue({
-        ...parseValue(action),
-        note: body.note !== undefined ? body.note : parseValue(action).note || null
-    });
-    await action.save();
-
-    await auditService.writeAuditLog({
-        t_id: match.round?.t_id,
-        entity_type: 'match_action',
-        entity_id: action.id,
-        action: 'update',
-        old_value: oldValue,
-        new_value: auditService.pickModelValues(action),
-        operator_id: operatorId
-    });
-
-    return action;
 };
 
 const buildUsedMaps = (actions, match = null) => {

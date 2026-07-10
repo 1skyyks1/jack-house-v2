@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: jack-house-web
+      - uses: actions/checkout@v4
+        with:
+          repository: 1skyyks1/jack-house-analytics
+          path: jack-house-analytics
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: jack-house-web/backend/package-lock.json
+      - name: Build analytics packages
+        run: |
+          pnpm --dir jack-house-analytics install --frozen-lockfile
+          pnpm --dir jack-house-analytics build
+          mkdir -p .packed/jack-house-analytics
+          pnpm --dir jack-house-analytics --filter @jack-house-analytics/server-core pack --pack-destination "$GITHUB_WORKSPACE/.packed/jack-house-analytics"
+          pnpm --dir jack-house-analytics --filter @jack-house-analytics/server-express pack --pack-destination "$GITHUB_WORKSPACE/.packed/jack-house-analytics"
+      - name: Install backend
+        run: npm ci
+        working-directory: jack-house-web/backend
+      - name: Test backend
+        run: npm test
+        working-directory: jack-house-web/backend
+      - name: Scan secrets
+        run: npm run check:secrets
+        working-directory: jack-house-web/backend

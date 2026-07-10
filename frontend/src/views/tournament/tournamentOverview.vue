@@ -119,12 +119,12 @@ const formatDate = (date) => {
 }
 
 const getRoleName = (role) => {
-  const map = { host: '主办', referee: '裁判', pooler: '选图', streamer: '直播', commentator: '解说' }
+  const map = { host: '主办', pooler: '选图', custom_mapper: 'Custom Mapper', tester: 'Tester', referee: '裁判', streamer: '直播', commentator: '解说' }
   return map[role] || role
 }
 
 const getRoleType = (role) => {
-  const map = { host: 'danger', referee: 'warning', pooler: 'success', streamer: 'primary', commentator: '' }
+  const map = { host: 'danger', pooler: 'success', custom_mapper: 'info', tester: 'info', referee: 'warning', streamer: 'primary', commentator: '' }
   return map[role] || ''
 }
 

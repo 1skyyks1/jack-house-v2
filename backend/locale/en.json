@@ -206,7 +206,7 @@
       "roundNotFound": "Round not found",
       "registrationClosed": "Registration is not open",
       "alreadyInTeam": "You are already in a team",
-      "staffCannotRegister": "Tournament staff cannot register as players. Ask host to handle staff records first",
+      "staffCannotRegister": "Hosts, poolers, custom mappers, and referees cannot also be players",
       "osuNotBound": "Please bind your osu! account first",
       "teamLocked": "Team is locked and members cannot be changed",
       "teamNameRequired": "Team name is required",

@@ -1,5 +1,7 @@
 const { TRound, TMappool, TMatch, TMatchAction, TGame, TTeam, TPlayer } = require('../../models/tournament');
 const User = require('../../models/user/user');
+const { Op } = require('sequelize');
+const sequelize = require('../../config/db');
 const osu = require('osu-api-v2-js');
 const bracketService = require('../../services/tournament/bracketService');
 const matchService = require('../../services/tournament/matchService');
@@ -394,19 +396,27 @@ exports.fetchMatchScores = async (req, res) => {
         const { maps: stageMappool } = await roundStageService.listStageMappool(tid, match.round.id);
         match.round.setDataValue('mappool', stageMappool);
 
-        // 获取队伍选手的 osu_uid
-        const team1Uids = new Set();
-        const team2Uids = new Set();
+        const team1Players = match.team1?.players || [];
+        const team2Players = match.team2?.players || [];
+        const playerByUserId = new Map(
+            [...team1Players, ...team2Players].map(player => [Number(player.user_id), player])
+        );
+        const users = playerByUserId.size > 0 ? await User.findAll({
+            where: { user_id: { [Op.in]: [...playerByUserId.keys()] } },
+            attributes: ['user_id', 'osu_uid']
+        }) : [];
+        const team1UserIds = new Set(team1Players.map(player => Number(player.user_id)));
+        const team2UserIds = new Set(team2Players.map(player => Number(player.user_id)));
+        const team1PlayerByOsuUid = new Map();
+        const team2PlayerByOsuUid = new Map();
 
-        for (const p of match.team1.players) {
-            const user = await User.findByPk(p.user_id);
-            const osuUid = Number(user?.osu_uid);
-            if (Number.isFinite(osuUid) && osuUid > 0) team1Uids.add(osuUid);
-        }
-        for (const p of match.team2.players) {
-            const user = await User.findByPk(p.user_id);
-            const osuUid = Number(user?.osu_uid);
-            if (Number.isFinite(osuUid) && osuUid > 0) team2Uids.add(osuUid);
+        for (const user of users) {
+            const osuUid = Number(user.osu_uid);
+            if (!Number.isFinite(osuUid) || osuUid <= 0) continue;
+            const userId = Number(user.user_id);
+            const player = playerByUserId.get(userId);
+            if (team1UserIds.has(userId)) team1PlayerByOsuUid.set(osuUid, player);
+            if (team2UserIds.has(userId)) team2PlayerByOsuUid.set(osuUid, player);
         }
 
         // 调用 osu! API；matches 端点默认只返回 100 条 events，需要分页读取完整 MP。
@@ -422,148 +432,186 @@ exports.fetchMatchScores = async (req, res) => {
             mapIdToPool.set(m.map_id, m);
         }
 
-        // 解析所有 games
         const games = osuMatchService.getGameEvents(mpMatch);
-        const pickActions = await TMatchAction.findAll({
-            where: { match_id: match.id, action_type: 'pick' },
-            order: [['sort_order', 'ASC'], ['id', 'ASC']]
-        });
-        const pickActionByMapId = new Map();
-        for (const action of pickActions) {
-            const mapId = Number(action.map_id);
-            if (!mapId || pickActionByMapId.has(mapId)) continue;
-            pickActionByMapId.set(mapId, action);
-        }
-        const savedGames = [];
-        let team1Total = 0;
-        let team2Total = 0;
-        const oldGames = await TGame.findAll({
-            where: { match_id: match.id },
-            order: [['order', 'ASC'], ['id', 'ASC']]
-        });
-        const oldValue = {
-            games: oldGames.map(game => auditService.pickModelValues(game)),
-            match: auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status'])
-        };
-
-        // 清除旧的 game 记录
-        await TGame.destroy({ where: { match_id: match.id } });
-
-        const latestPickedGameByMapId = new Map();
-        for (let i = 0; i < games.length; i++) {
-            const game = games[i].game;
-            const poolMap = mapIdToPool.get(osuMatchService.getGameBeatmapId(game));
-            if (!poolMap) continue; // 不在图池中的图跳过
-            const pickAction = pickActionByMapId.get(Number(poolMap.id));
-            if (!pickAction) continue; // 没有在当前操作里被 pick 的图不计入比赛分数
-
-            latestPickedGameByMapId.set(Number(poolMap.id), {
-                game,
-                poolMap,
-                pickAction,
-                fallbackOrder: i + 1
+        const result = await sequelize.transaction(async (transaction) => {
+            // The match row serializes score imports for the same match.
+            const lockedMatch = await TMatch.findByPk(match.id, {
+                transaction,
+                lock: transaction.LOCK.UPDATE
             });
-        }
-
-        const pickedGames = Array.from(latestPickedGameByMapId.values())
-            .sort((a, b) => Number(a.pickAction.sort_order || a.fallbackOrder) - Number(b.pickAction.sort_order || b.fallbackOrder)
-                || Number(a.pickAction.id) - Number(b.pickAction.id));
-
-        for (const pickedGame of pickedGames) {
-            const { game, poolMap, pickAction, fallbackOrder } = pickedGame;
-
-            let p1Score = 0, p2Score = 0;
-            let p1Id = null, p2Id = null;
-
-            for (const score of osuMatchService.getGameScores(game)) {
-                const scoreVal = osuMatchService.getScoreValue(score);
-                const scoreUserId = osuMatchService.getScoreUserId(score);
-                if (team1Uids.has(scoreUserId)) {
-                    p1Score = scoreVal;
-                    const user = await User.findOne({ where: { osu_uid: scoreUserId } });
-                    const player = match.team1.players.find(p => Number(p.user_id) === Number(user?.user_id));
-                    p1Id = player?.id;
-                } else if (team2Uids.has(scoreUserId)) {
-                    p2Score = scoreVal;
-                    const user = await User.findOne({ where: { osu_uid: scoreUserId } });
-                    const player = match.team2.players.find(p => Number(p.user_id) === Number(user?.user_id));
-                    p2Id = player?.id;
-                }
+            if (!lockedMatch) {
+                const error = new Error('Match not found while importing scores');
+                error.status = 404;
+                throw error;
+            }
+            if (Number(lockedMatch.mp_id) !== Number(match.mp_id)) {
+                const error = new Error('Match MP changed while importing scores');
+                error.status = 409;
+                throw error;
             }
 
-            if (p1Score === p2Score) continue;
-
-            const winner = p1Score > p2Score ? 1 : 2;
-            if (winner === 1) team1Total++;
-            else team2Total++;
-
-            const savedGame = await TGame.create({
-                match_id: match.id,
-                map_id: poolMap.id,
-                order: pickAction.sort_order || fallbackOrder,
-                player1_id: p1Id || 0,
-                player2_id: p2Id || 0,
-                player1_score: p1Score,
-                player2_score: p2Score,
-                winner_team: winner,
-                action_type: 2, // pick
-                action_by: Number(pickAction.team_id) === Number(match.team2_id) ? 2 : 1
+            const pickActions = await TMatchAction.findAll({
+                where: { match_id: match.id, action_type: 'pick' },
+                order: [['sort_order', 'ASC'], ['id', 'ASC']],
+                transaction,
+                lock: transaction.LOCK.UPDATE
             });
+            const pickActionByMapId = new Map();
+            for (const action of pickActions) {
+                const mapId = Number(action.map_id);
+                if (!mapId || pickActionByMapId.has(mapId)) continue;
+                pickActionByMapId.set(mapId, action);
+            }
 
-            savedGames.push({
+            const latestPickedGameByMapId = new Map();
+            for (let i = 0; i < games.length; i++) {
+                const game = games[i].game;
+                const poolMap = mapIdToPool.get(osuMatchService.getGameBeatmapId(game));
+                if (!poolMap) continue;
+                const pickAction = pickActionByMapId.get(Number(poolMap.id));
+                if (!pickAction) continue;
+
+                latestPickedGameByMapId.set(Number(poolMap.id), {
+                    game,
+                    poolMap,
+                    pickAction,
+                    fallbackOrder: i + 1
+                });
+            }
+
+            const pickedGames = Array.from(latestPickedGameByMapId.values())
+                .sort((a, b) => Number(a.pickAction.sort_order || a.fallbackOrder) - Number(b.pickAction.sort_order || b.fallbackOrder)
+                    || Number(a.pickAction.id) - Number(b.pickAction.id));
+            const gameRows = [];
+            const gameMetadata = [];
+            let team1Total = 0;
+            let team2Total = 0;
+
+            for (const pickedGame of pickedGames) {
+                const { game, poolMap, pickAction, fallbackOrder } = pickedGame;
+                let p1Score = 0;
+                let p2Score = 0;
+                let p1Id = null;
+                let p2Id = null;
+
+                for (const score of osuMatchService.getGameScores(game)) {
+                    const scoreValue = osuMatchService.getScoreValue(score);
+                    const scoreUserId = osuMatchService.getScoreUserId(score);
+                    const team1Player = team1PlayerByOsuUid.get(scoreUserId);
+                    const team2Player = team2PlayerByOsuUid.get(scoreUserId);
+                    if (team1Player) {
+                        p1Score = scoreValue;
+                        p1Id = team1Player.id;
+                    } else if (team2Player) {
+                        p2Score = scoreValue;
+                        p2Id = team2Player.id;
+                    }
+                }
+
+                if (p1Score === p2Score) continue;
+
+                const winner = p1Score > p2Score ? 1 : 2;
+                if (winner === 1) team1Total++;
+                else team2Total++;
+
+                gameRows.push({
+                    match_id: match.id,
+                    map_id: poolMap.id,
+                    order: pickAction.sort_order || fallbackOrder,
+                    player1_id: p1Id || 0,
+                    player2_id: p2Id || 0,
+                    player1_score: p1Score,
+                    player2_score: p2Score,
+                    winner_team: winner,
+                    action_type: 2,
+                    action_by: Number(pickAction.team_id) === Number(match.team2_id) ? 2 : 1
+                });
+                gameMetadata.push({
+                    action_id: pickAction.id,
+                    map: poolMap.type,
+                    p1Score,
+                    p2Score,
+                    winner
+                });
+            }
+
+            const oldGames = await TGame.findAll({
+                where: { match_id: match.id },
+                order: [['order', 'ASC'], ['id', 'ASC']],
+                transaction
+            });
+            const oldValue = {
+                game_count: oldGames.length,
+                ...auditService.pickModelValues(lockedMatch, ['team1_score', 'team2_score', 'winner_id', 'status'])
+            };
+
+            await TGame.destroy({ where: { match_id: match.id }, transaction });
+            const savedGameModels = gameRows.length > 0
+                ? await TGame.bulkCreate(gameRows, { transaction })
+                : [];
+            const savedGames = savedGameModels.map((savedGame, index) => ({
                 id: savedGame.id,
                 order: savedGame.order,
-                action_id: pickAction.id,
-                map_id: poolMap.id,
-                map: poolMap.type,
-                p1Score,
-                p2Score,
-                winner
-            });
-        }
+                action_id: gameMetadata[index].action_id,
+                map_id: savedGame.map_id,
+                map: gameMetadata[index].map,
+                p1Score: gameMetadata[index].p1Score,
+                p2Score: gameMetadata[index].p2Score,
+                winner: gameMetadata[index].winner
+            }));
 
-        // 更新比赛分数
-        match.team1_score = team1Total;
-        match.team2_score = team2Total;
+            lockedMatch.team1_score = team1Total;
+            lockedMatch.team2_score = team2Total;
+            const firstTo = roundStageService.getRoundFirstTo(match.round);
+            if (team1Total >= firstTo) {
+                lockedMatch.winner_id = lockedMatch.team1_id;
+                lockedMatch.status = 2;
+            } else if (team2Total >= firstTo) {
+                lockedMatch.winner_id = lockedMatch.team2_id;
+                lockedMatch.status = 2;
+            }
+            await lockedMatch.save({ transaction });
 
-        // 检查是否决出胜负
-        const firstTo = roundStageService.getRoundFirstTo(match.round);
-        if (team1Total >= firstTo) {
-            match.winner_id = match.team1_id;
-            match.status = 2;
-        } else if (team2Total >= firstTo) {
-            match.winner_id = match.team2_id;
-            match.status = 2;
-        }
+            let propagation = null;
+            if (lockedMatch.status === 2 && lockedMatch.winner_id) {
+                propagation = await bracketService.propagateMatchResult(
+                    lockedMatch.id,
+                    req.user?.user_id,
+                    { transaction }
+                );
+            }
 
-        await match.save();
-        let propagation = null;
-        if (match.status === 2 && match.winner_id) {
-            propagation = await bracketService.propagateMatchResult(match.id, req.user?.user_id);
-        }
+            await auditService.writeAuditLog({
+                t_id: tid,
+                entity_type: 'match',
+                entity_id: lockedMatch.id,
+                action: 'fetch_match_scores',
+                old_value: oldValue,
+                new_value: {
+                    game_count: savedGames.length,
+                    ...auditService.pickModelValues(lockedMatch, ['team1_score', 'team2_score', 'winner_id', 'status']),
+                    mp_id: lockedMatch.mp_id,
+                    propagated_match_count: propagation?.updated || 0
+                },
+                operator_id: req.user?.user_id
+            }, { transaction });
 
-        await auditService.writeAuditLog({
-            t_id: tid,
-            entity_type: 'match',
-            entity_id: match.id,
-            action: 'fetch_match_scores',
-            old_value: oldValue,
-            new_value: {
-                games: savedGames,
-                match: auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status']),
-                mp_id: match.mp_id,
-                propagation
-            },
-            operator_id: req.user?.user_id
+            return {
+                match: lockedMatch,
+                propagation,
+                savedGames,
+                team1Total,
+                team2Total
+            };
         });
 
         res.json({
             message: req.t('tournament.messages.scoresFetched'),
-            team1_score: team1Total,
-            team2_score: team2Total,
-            games: savedGames,
-            winner: match.winner_id ? (match.winner_id === match.team1_id ? 'team1' : 'team2') : null,
-            propagation
+            team1_score: result.team1Total,
+            team2_score: result.team2Total,
+            games: result.savedGames,
+            winner: result.match.winner_id ? (result.match.winner_id === result.match.team1_id ? 'team1' : 'team2') : null,
+            propagation: result.propagation
         });
     } catch (error) {
         console.error(error);

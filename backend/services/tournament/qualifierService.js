@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const osu = require('osu-api-v2-js');
+const sequelize = require('../../config/db');
 const { TQualMappool, TQualScore, TQualImport, TTeam, TPlayer, Tournament } = require('../../models/tournament');
 const User = require('../../models/user/user');
 const auditService = require('./auditService');
@@ -16,8 +17,8 @@ const makeError = (message, status = 400) => {
     return error;
 };
 
-const ensureTournament = async (tid) => {
-    const tournament = await Tournament.findByPk(tid);
+const ensureTournament = async (tid, options = {}) => {
+    const tournament = await Tournament.findByPk(tid, options);
     if (!tournament) {
         throw makeError('赛事不存在', 404);
     }
@@ -30,8 +31,8 @@ const assertQualifierUnlocked = (tournament) => {
     }
 };
 
-const ensureQualifierUnlocked = async (tid) => {
-    const tournament = await ensureTournament(tid);
+const ensureQualifierUnlocked = async (tid, options = {}) => {
+    const tournament = await ensureTournament(tid, options);
     assertQualifierUnlocked(tournament);
     return tournament;
 };
@@ -106,13 +107,14 @@ const normalizeNonNegativeInt = (value, label, defaultValue = null) => {
     return normalized;
 };
 
-const ensureQualMapUnique = async (tid, payload, ignoredMapId = null) => {
+const ensureQualMapUnique = async (tid, payload, ignoredMapId = null, options = {}) => {
     const duplicateStage = await TQualMappool.findOne({
         where: {
             t_id: tid,
             index: payload.index,
             ...(ignoredMapId ? { id: { [Op.ne]: ignoredMapId } } : {})
-        }
+        },
+        ...options
     });
     if (duplicateStage) {
         throw makeError('该资格赛 stage 已存在谱面');
@@ -123,7 +125,8 @@ const ensureQualMapUnique = async (tid, payload, ignoredMapId = null) => {
             t_id: tid,
             map_id: payload.map_id,
             ...(ignoredMapId ? { id: { [Op.ne]: ignoredMapId } } : {})
-        }
+        },
+        ...options
     });
     if (duplicateBeatmap) {
         throw makeError('该资格赛谱面已存在');
@@ -131,8 +134,6 @@ const ensureQualMapUnique = async (tid, payload, ignoredMapId = null) => {
 };
 
 const createQualMap = async (tid, body, operatorId) => {
-    await ensureQualifierUnlocked(tid);
-
     const payload = {
         artist: String(body.artist || '').trim(),
         hp: normalizeNonNegativeNumber(body.hp, 'HP', 0),
@@ -152,34 +153,30 @@ const createQualMap = async (tid, body, operatorId) => {
         throw makeError('谱面 artist、title 和 mapper 不能为空');
     }
 
-    await ensureQualMapUnique(tid, payload);
+    return sequelize.transaction(async (transaction) => {
+        await ensureQualifierUnlocked(tid, { transaction, lock: transaction.LOCK.UPDATE });
+        await ensureQualMapUnique(tid, payload, null, { transaction });
 
-    const map = await TQualMappool.create({
-        t_id: tid,
-        ...payload
+        const map = await TQualMappool.create({
+            t_id: tid,
+            ...payload
+        }, { transaction });
+
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier_mappool',
+            entity_id: map.id,
+            action: 'create',
+            old_value: null,
+            new_value: auditService.pickModelValues(map),
+            operator_id: operatorId
+        }, { transaction });
+
+        return map;
     });
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier_mappool',
-        entity_id: map.id,
-        action: 'create',
-        old_value: null,
-        new_value: auditService.pickModelValues(map),
-        operator_id: operatorId
-    });
-
-    return map;
 };
 
 const updateQualMap = async (tid, mapId, body, operatorId) => {
-    await ensureQualifierUnlocked(tid);
-
-    const map = await TQualMappool.findOne({ where: { id: mapId, t_id: tid } });
-    if (!map) {
-        throw makeError('图不存在', 404);
-    }
-
     const payload = {};
     if (body.index !== undefined) payload.index = normalizeQualStage(body.index);
     if (body.map_id !== undefined) payload.map_id = normalizePositiveInt(body.map_id, 'Beatmap ID');
@@ -197,50 +194,67 @@ const updateQualMap = async (tid, mapId, body, operatorId) => {
     }
     if (body.weight !== undefined) payload.weight = normalizePositiveNumber(body.weight, '权重', 1.0);
 
-    const nextPayload = {
-        index: payload.index ?? map.index,
-        map_id: payload.map_id ?? map.map_id
-    };
-    await ensureQualMapUnique(tid, nextPayload, map.id);
+    return sequelize.transaction(async (transaction) => {
+        await ensureQualifierUnlocked(tid, { transaction, lock: transaction.LOCK.UPDATE });
+        const map = await TQualMappool.findOne({
+            where: { id: mapId, t_id: tid },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!map) {
+            throw makeError('图不存在', 404);
+        }
 
-    const oldValue = auditService.pickModelValues(map);
-    await map.update(payload);
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier_mappool',
-        entity_id: map.id,
-        action: 'update',
-        old_value: oldValue,
-        new_value: auditService.pickModelValues(map),
-        operator_id: operatorId
+        const nextPayload = {
+            index: payload.index ?? map.index,
+            map_id: payload.map_id ?? map.map_id
+        };
+        await ensureQualMapUnique(tid, nextPayload, map.id, { transaction });
+
+        const oldValue = auditService.pickModelValues(map);
+        await map.update(payload, { transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier_mappool',
+            entity_id: map.id,
+            action: 'update',
+            old_value: oldValue,
+            new_value: auditService.pickModelValues(map),
+            operator_id: operatorId
+        }, { transaction });
+
+        return map;
     });
-
-    return map;
 };
 
 const deleteQualMap = async (tid, mapId, operatorId) => {
-    await ensureQualifierUnlocked(tid);
+    return sequelize.transaction(async (transaction) => {
+        await ensureQualifierUnlocked(tid, { transaction, lock: transaction.LOCK.UPDATE });
+        const map = await TQualMappool.findOne({
+            where: { id: mapId, t_id: tid },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!map) {
+            throw makeError('图不存在', 404);
+        }
 
-    const map = await TQualMappool.findOne({ where: { id: mapId, t_id: tid } });
-    if (!map) {
-        throw makeError('图不存在', 404);
-    }
+        const scoreCount = await TQualScore.count({ where: { map_id: map.id }, transaction });
+        if (scoreCount > 0) {
+            throw makeError('该资格赛图已有成绩，不能直接删除');
+        }
 
-    const scoreCount = await TQualScore.count({ where: { map_id: map.id } });
-    if (scoreCount > 0) {
-        throw makeError('该资格赛图已有成绩，不能直接删除');
-    }
-
-    const oldValue = auditService.pickModelValues(map);
-    await map.destroy();
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier_mappool',
-        entity_id: map.id,
-        action: 'delete',
-        old_value: oldValue,
-        new_value: null,
-        operator_id: operatorId
+        const oldValue = auditService.pickModelValues(map);
+        await map.destroy({ transaction });
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier_mappool',
+            entity_id: map.id,
+            action: 'delete',
+            old_value: oldValue,
+            new_value: null,
+            operator_id: operatorId
+        }, { transaction });
     });
 };
 
@@ -330,121 +344,180 @@ const fetchQualScoresFromMp = async (tid, body, operatorId) => {
     await ensureQualifierUnlocked(tid);
     const teams = await getQualifierTeams(tid, teamId);
     const teamById = new Map(teams.map(team => [Number(team.id), team]));
-    const importLogs = new Map();
+    const qualMaps = await TQualMappool.findAll({ where: { t_id: tid } });
+    const mapByBeatmapId = new Map(qualMaps.map(map => [Number(map.map_id), map]));
+    const mapById = new Map(qualMaps.map(map => [Number(map.id), map]));
+    if (mapByBeatmapId.size === 0) {
+        throw makeError('资格赛图池为空');
+    }
 
-    const ensureImportLog = async (team) => {
-        const existing = importLogs.get(Number(team.id));
-        if (existing) return existing;
-        const next = await TQualImport.create({
-            t_id: tid,
-            team_id: team.id,
-            mp_id: mpId,
-            status: 'running',
-            imported_by: operatorId || null
+    const playerByOsuUid = await buildPlayerLookup(teams);
+    if (playerByOsuUid.size === 0) {
+        throw makeError(teamId ? '队伍成员未绑定 osu 账号' : '本届队伍成员未绑定 osu 账号');
+    }
+
+    // Keep the osu network request outside the database transaction.
+    const match = await osuMatchService.getCompleteMatch(mpId);
+    if (!match || !Array.isArray(match.events)) {
+        throw makeError('无法获取比赛数据');
+    }
+
+    const attemptByBeatmapId = new Map();
+    const candidateByKey = new Map();
+    for (const event of osuMatchService.getGameEvents(match)) {
+        const game = event.game;
+        const beatmapId = osuMatchService.getGameBeatmapId(game);
+        const qualMap = mapByBeatmapId.get(beatmapId);
+        if (!qualMap) continue;
+
+        const attemptNo = (attemptByBeatmapId.get(beatmapId) || 0) + 1;
+        attemptByBeatmapId.set(beatmapId, attemptNo);
+        const sourceGameId = osuMatchService.getGameId(game, event);
+
+        for (const score of osuMatchService.getGameScores(game)) {
+            const entry = playerByOsuUid.get(osuMatchService.getScoreUserId(score));
+            if (!entry?.player || !entry?.team || !teamById.has(Number(entry.team.id))) continue;
+
+            const scoreValue = osuMatchService.getScoreValue(score);
+            if (!scoreValue) continue;
+            const candidate = {
+                attempt_no: attemptNo,
+                is_manual: 0,
+                map_id: qualMap.id,
+                player_id: entry.player.id,
+                score: scoreValue,
+                source_game_id: sourceGameId,
+                source_mp_id: mpId,
+                team_id: entry.team.id
+            };
+            const sourceKey = sourceGameId || `attempt:${attemptNo}`;
+            const key = [candidate.map_id, candidate.team_id, candidate.player_id, mpId, sourceKey].join(':');
+            candidateByKey.set(key, candidate);
+        }
+    }
+
+    return sequelize.transaction(async (transaction) => {
+        await ensureQualifierUnlocked(tid, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
         });
-        importLogs.set(Number(team.id), next);
-        return next;
-    };
 
-    try {
-        const qualMaps = await TQualMappool.findAll({ where: { t_id: tid } });
-        const mapByBeatmapId = new Map(qualMaps.map(map => [Number(map.map_id), map]));
-        if (mapByBeatmapId.size === 0) {
-            throw makeError('资格赛图池为空');
+        const candidates = [...candidateByKey.values()];
+        const teamIds = [...new Set(candidates.map(candidate => Number(candidate.team_id)))];
+        const importLogs = new Map();
+        for (const candidateTeamId of teamIds) {
+            const importLog = await TQualImport.create({
+                t_id: tid,
+                team_id: candidateTeamId,
+                mp_id: mpId,
+                status: 'running',
+                imported_by: operatorId || null
+            }, { transaction });
+            importLogs.set(candidateTeamId, importLog);
         }
 
-        const playerByOsuUid = await buildPlayerLookup(teams);
-        if (playerByOsuUid.size === 0) {
-            throw makeError(teamId ? '队伍成员未绑定 osu 账号' : '本届队伍成员未绑定 osu 账号');
-        }
+        const sourceGameIds = [...new Set(candidates.map(candidate => candidate.source_game_id).filter(Boolean))];
+        const existingScores = sourceGameIds.length > 0 ? await TQualScore.findAll({
+            where: {
+                source_mp_id: mpId,
+                source_game_id: { [Op.in]: sourceGameIds }
+            },
+            attributes: ['id', 'map_id', 'team_id', 'player_id', 'score', 'attempt_no', 'source_mp_id', 'source_game_id', 'is_manual'],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        }) : [];
+        const buildSourceKey = score => [
+            score.map_id,
+            score.team_id,
+            score.player_id,
+            score.source_mp_id,
+            score.source_game_id
+        ].join(':');
+        const existingByKey = new Map(existingScores.map(score => [buildSourceKey(score), score]));
+        const scoreRows = [];
+        const updatedScores = [];
+        const updatedScoreChanges = [];
+        const unchangedCountByTeam = new Map();
+        const updatedCountByTeam = new Map();
 
-        const match = await osuMatchService.getCompleteMatch(mpId);
-
-        if (!match || !Array.isArray(match.events)) {
-            throw makeError('无法获取比赛数据');
-        }
-
-        const games = osuMatchService.getGameEvents(match);
-        const attemptByBeatmapId = new Map();
-        const savedScores = [];
-        let skippedDuplicates = 0;
-
-        for (const event of games) {
-            const game = event.game;
-            const beatmapId = osuMatchService.getGameBeatmapId(game);
-            const qualMap = mapByBeatmapId.get(beatmapId);
-            if (!qualMap) continue;
-
-            const attemptNo = (attemptByBeatmapId.get(beatmapId) || 0) + 1;
-            attemptByBeatmapId.set(beatmapId, attemptNo);
-            const sourceGameId = osuMatchService.getGameId(game, event);
-
-            for (const score of osuMatchService.getGameScores(game)) {
-                const entry = playerByOsuUid.get(osuMatchService.getScoreUserId(score));
-                if (!entry?.player || !entry?.team) continue;
-
-                const player = entry.player;
-                const team = entry.team;
-                if (!teamById.has(Number(team.id))) continue;
-
-                const scoreValue = osuMatchService.getScoreValue(score);
-                if (!scoreValue) continue;
-                const importLog = await ensureImportLog(team);
-
-                if (sourceGameId) {
-                    const duplicate = await TQualScore.findOne({
-                        where: {
-                            map_id: qualMap.id,
-                            team_id: team.id,
-                            player_id: player.id,
-                            source_mp_id: mpId,
-                            source_game_id: sourceGameId
-                        }
-                    });
-                    if (duplicate) {
-                        skippedDuplicates += 1;
-                        continue;
-                    }
-                }
-
-                const saved = await TQualScore.create({
-                    map_id: qualMap.id,
-                    team_id: team.id,
-                    player_id: player.id,
-                    score: scoreValue,
-                    attempt_no: attemptNo,
-                    source_mp_id: mpId,
-                    source_game_id: sourceGameId,
-                    import_id: importLog.id,
-                    is_manual: 0
+        for (const candidate of candidates) {
+            const existing = candidate.source_game_id ? existingByKey.get(buildSourceKey(candidate)) : null;
+            if (!existing) {
+                scoreRows.push({
+                    ...candidate,
+                    import_id: importLogs.get(Number(candidate.team_id))?.id || null
                 });
-
-                savedScores.push({
-                    id: saved.id,
-                    map: qualMap.index,
-                    map_id: qualMap.id,
-                    team_id: team.id,
-                    player_id: player.id,
-                    attempt_no: attemptNo,
-                    score: scoreValue
-                });
+                continue;
             }
+
+            const scoreChanged = Number(existing.score) !== Number(candidate.score);
+            const attemptChanged = Number(existing.attempt_no) !== Number(candidate.attempt_no);
+            if (!scoreChanged && !attemptChanged) {
+                const existingTeamId = Number(candidate.team_id);
+                unchangedCountByTeam.set(existingTeamId, (unchangedCountByTeam.get(existingTeamId) || 0) + 1);
+                continue;
+            }
+
+            const oldScore = Number(existing.score);
+            const oldAttemptNo = Number(existing.attempt_no);
+            const wasManual = Boolean(existing.is_manual);
+            existing.score = candidate.score;
+            existing.attempt_no = candidate.attempt_no;
+            existing.is_manual = 0;
+            await existing.save({ transaction });
+            updatedScores.push(existing);
+            updatedScoreChanges.push({
+                score_id: existing.id,
+                from: oldScore,
+                to: Number(candidate.score),
+                ...(oldAttemptNo !== Number(candidate.attempt_no) ? {
+                    attempt_from: oldAttemptNo,
+                    attempt_to: Number(candidate.attempt_no)
+                } : {}),
+                was_manual: wasManual
+            });
+            const existingTeamId = Number(candidate.team_id);
+            updatedCountByTeam.set(existingTeamId, (updatedCountByTeam.get(existingTeamId) || 0) + 1);
+        }
+        if (scoreRows.length > 0) {
+            // The source-game unique key remains the final concurrency guard.
+            await TQualScore.bulkCreate(scoreRows, { transaction, ignoreDuplicates: true });
         }
 
-        const savedCountByTeam = savedScores.reduce((acc, score) => {
-            acc.set(Number(score.team_id), (acc.get(Number(score.team_id)) || 0) + 1);
+        const importIds = [...importLogs.values()].map(importLog => importLog.id);
+        const savedModels = importIds.length > 0 ? await TQualScore.findAll({
+            where: { import_id: { [Op.in]: importIds } },
+            order: [['id', 'ASC']],
+            transaction
+        }) : [];
+        const ignoredConcurrentDuplicates = Math.max(scoreRows.length - savedModels.length, 0);
+        const skippedDuplicates = [...unchangedCountByTeam.values()].reduce((total, count) => total + count, 0)
+            + ignoredConcurrentDuplicates;
+        const savedScores = [...savedModels, ...updatedScores].map(saved => ({
+            id: saved.id,
+            map: mapById.get(Number(saved.map_id))?.index ?? null,
+            map_id: saved.map_id,
+            team_id: saved.team_id,
+            player_id: saved.player_id,
+            attempt_no: saved.attempt_no,
+            score: saved.score
+        }));
+        const createdCountByTeam = savedModels.reduce((acc, score) => {
+            const savedTeamId = Number(score.team_id);
+            acc.set(savedTeamId, (acc.get(savedTeamId) || 0) + 1);
             return acc;
         }, new Map());
 
+        if (teamIds.length > 0) {
+            await TTeam.update(
+                { qual_mp_id: mpId },
+                { where: { id: { [Op.in]: teamIds }, t_id: tid }, transaction }
+            );
+        }
         for (const [logTeamId, importLog] of importLogs.entries()) {
-            const team = teamById.get(Number(logTeamId));
-            if (team) {
-                team.qual_mp_id = mpId;
-                await team.save();
-            }
             importLog.status = 'success';
-            importLog.message = `导入 ${savedCountByTeam.get(Number(logTeamId)) || 0} 条成绩，跳过 ${skippedDuplicates} 条重复成绩`;
-            await importLog.save();
+            importLog.message = `新增 ${createdCountByTeam.get(logTeamId) || 0} 条，更新 ${updatedCountByTeam.get(logTeamId) || 0} 条，跳过 ${unchangedCountByTeam.get(logTeamId) || 0} 条未变化成绩`;
+            await importLog.save({ transaction });
         }
 
         await auditService.writeAuditLog({
@@ -454,29 +527,26 @@ const fetchQualScoresFromMp = async (tid, body, operatorId) => {
             action: 'import_scores',
             old_value: null,
             new_value: {
-                team_ids: Array.from(importLogs.keys()),
                 mp_id: mpId,
-                saved_count: savedScores.length,
-                skipped_duplicates: skippedDuplicates,
+                team_count: teamIds.length,
+                created_count: savedModels.length,
+                updated_count: updatedScores.length,
+                unchanged_count: skippedDuplicates,
+                updated_scores: updatedScoreChanges,
                 auto_detect_teams: teamId === null
             },
             operator_id: operatorId
-        });
+        }, { transaction });
 
         return {
             message: '成绩获取完成',
-            importLogs: Array.from(importLogs.values()),
+            importLogs: [...importLogs.values()],
             scores: savedScores,
-            skippedDuplicates
+            skippedDuplicates,
+            createdCount: savedModels.length,
+            updatedCount: updatedScores.length
         };
-    } catch (error) {
-        for (const importLog of importLogs.values()) {
-            importLog.status = 'failed';
-            importLog.message = error.message || '导入失败';
-            await importLog.save();
-        }
-        throw error;
-    }
+    });
 };
 
 const normalizeMpIds = (body) => {
@@ -514,6 +584,8 @@ const fetchQualScoresFromMps = async (tid, body, operatorId) => {
                 import_log_count: result.importLogs?.length || 0,
                 mp_id: mpId,
                 saved_count: result.scores?.length || 0,
+                created_count: result.createdCount || 0,
+                updated_count: result.updatedCount || 0,
                 skipped_duplicates: result.skippedDuplicates || 0,
                 status: 'success'
             });
@@ -536,101 +608,111 @@ const fetchQualScoresFromMps = async (tid, body, operatorId) => {
     };
 };
 
-const calculateRanking = async (tid, operatorId) => {
-    const tournament = await ensureQualifierUnlocked(tid);
-    const rankMode = Number(tournament.qual_rank_mode) === QUAL_RANK_MODE_RANK_SUM
-        ? QUAL_RANK_MODE_RANK_SUM
-        : QUAL_RANK_MODE_TOTAL_SCORE;
-
-    const teams = await TTeam.findAll({
-        where: { t_id: tid, status: 1 },
-        order: [['id', 'ASC']]
-    });
-    const qualMaps = await TQualMappool.findAll({
-        where: { t_id: tid },
-        order: [['index', 'ASC']]
-    });
-
-    const teamScores = new Map();
-    for (const team of teams) {
-        teamScores.set(team.id, {
-            team,
-            bestByMap: new Map(),
-            mapRanks: new Map(),
-            rankScore: 0,
-            totalScore: 0
+const calculateRanking = async (tid, operatorId, options = {}) => {
+    const run = async (transaction) => {
+        const tournament = await ensureQualifierUnlocked(tid, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
         });
-    }
+        const rankMode = Number(tournament.qual_rank_mode) === QUAL_RANK_MODE_RANK_SUM
+            ? QUAL_RANK_MODE_RANK_SUM
+            : QUAL_RANK_MODE_TOTAL_SCORE;
 
-    const allScores = await TQualScore.findAll({
-        include: [{ model: TQualMappool, as: 'map', where: { t_id: tid } }]
-    });
+        const teams = await TTeam.findAll({
+            where: { t_id: tid, status: 1 },
+            order: [['id', 'ASC']],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        const qualMaps = await TQualMappool.findAll({
+            where: { t_id: tid },
+            order: [['index', 'ASC']],
+            transaction
+        });
 
-    for (const score of allScores) {
-        if (score.score <= 0) continue;
-
-        const entry = teamScores.get(score.team_id);
-        if (!entry) continue;
-
-        const oldBest = entry.bestByMap.get(score.map_id);
-        if (!oldBest || score.score > oldBest.score) {
-            entry.bestByMap.set(score.map_id, {
-                score: score.score,
-                player_id: score.player_id,
-                attempt_no: score.attempt_no,
-                score_id: score.id
+        const teamScores = new Map();
+        for (const team of teams) {
+            teamScores.set(team.id, {
+                team,
+                bestByMap: new Map(),
+                mapRanks: new Map(),
+                rankScore: 0,
+                totalScore: 0
             });
         }
-    }
 
-    const ranking = rankMode === QUAL_RANK_MODE_RANK_SUM
-        ? buildRankSumRanking(teamScores, qualMaps)
-        : buildTotalScoreRanking(teamScores, qualMaps);
-    const rankedTeamIds = new Set(ranking.map(entry => entry.team.id));
-    assignQualifierRanks(ranking, rankMode);
+        const allScores = await TQualScore.findAll({
+            include: [{ model: TQualMappool, as: 'map', where: { t_id: tid } }],
+            transaction
+        });
 
-    for (let i = 0; i < ranking.length; i++) {
-        const team = ranking[i].team;
-        team.qual_rank = ranking[i].rank;
-        team.qual_score = ranking[i].rankingScore;
-        await team.save();
-    }
-    for (const entry of teamScores.values()) {
-        if (rankedTeamIds.has(entry.team.id)) continue;
-        entry.team.qual_rank = null;
-        entry.team.qual_score = null;
-        await entry.team.save();
-    }
+        for (const score of allScores) {
+            if (score.score <= 0) continue;
 
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier',
-        entity_id: null,
-        action: 'calculate_ranking',
-        old_value: null,
-        new_value: {
-            map_count: qualMaps.length,
+            const entry = teamScores.get(score.team_id);
+            if (!entry) continue;
+
+            const oldBest = entry.bestByMap.get(score.map_id);
+            if (!oldBest || score.score > oldBest.score) {
+                entry.bestByMap.set(score.map_id, {
+                    score: score.score,
+                    player_id: score.player_id,
+                    attempt_no: score.attempt_no,
+                    score_id: score.id
+                });
+            }
+        }
+
+        const ranking = rankMode === QUAL_RANK_MODE_RANK_SUM
+            ? buildRankSumRanking(teamScores, qualMaps)
+            : buildTotalScoreRanking(teamScores, qualMaps);
+        const rankedTeamIds = new Set(ranking.map(entry => entry.team.id));
+        assignQualifierRanks(ranking, rankMode);
+
+        for (const entry of teamScores.values()) {
+            if (rankedTeamIds.has(entry.team.id)) {
+                const ranked = ranking.find(item => item.team.id === entry.team.id);
+                entry.team.qual_rank = ranked.rank;
+                entry.team.qual_score = ranked.rankingScore;
+            } else {
+                entry.team.qual_rank = null;
+                entry.team.qual_score = null;
+            }
+            await entry.team.save({ transaction });
+        }
+
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier',
+            entity_id: null,
+            action: 'calculate_ranking',
+            old_value: null,
+            new_value: {
+                map_count: qualMaps.length,
+                rank_mode: rankMode,
+                team_count: ranking.length
+            },
+            operator_id: operatorId
+        }, { transaction });
+
+        return {
+            message: '排名计算完成',
             rank_mode: rankMode,
-            team_count: ranking.length
-        },
-        operator_id: operatorId
-    });
-
-    return {
-        message: '排名计算完成',
-        rank_mode: rankMode,
-        ranking: ranking.map((entry) => ({
-            rank: entry.rank,
-            team: entry.team,
-            rankScore: entry.rankScore,
-            totalScore: entry.totalScore,
-            bestByMap: Array.from(entry.bestByMap.entries()).map(([mapId, best]) => ({
-                map_id: mapId,
-                ...best,
-                rank: entry.mapRanks.get(mapId) ?? null
+            ranking: ranking.map((entry) => ({
+                rank: entry.rank,
+                team: entry.team,
+                rankScore: entry.rankScore,
+                totalScore: entry.totalScore,
+                bestByMap: Array.from(entry.bestByMap.entries()).map(([mapId, best]) => ({
+                    map_id: mapId,
+                    ...best,
+                    rank: entry.mapRanks.get(mapId) ?? null
+                }))
             }))
-        }))
+        };
     };
+
+    return options.transaction ? run(options.transaction) : sequelize.transaction(run);
 };
 
 const buildTotalScoreRanking = (teamScores, qualMaps) => {
@@ -730,37 +812,40 @@ const buildRankSumRanking = (teamScores, qualMaps) => {
 };
 
 const updateQualScore = async (tid, scoreId, body, operatorId) => {
-    await ensureQualifierUnlocked(tid);
-
     const scoreValue = Number(body.score);
     if (!Number.isFinite(scoreValue) || scoreValue < 0) {
         throw makeError('成绩无效');
     }
 
-    const score = await TQualScore.findOne({
-        where: { id: scoreId },
-        include: [{ model: TQualMappool, as: 'map', where: { t_id: tid } }]
+    return sequelize.transaction(async (transaction) => {
+        await ensureQualifierUnlocked(tid, { transaction, lock: transaction.LOCK.UPDATE });
+        const score = await TQualScore.findOne({
+            where: { id: scoreId },
+            include: [{ model: TQualMappool, as: 'map', where: { t_id: tid } }],
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+        if (!score) {
+            throw makeError('成绩不存在', 404);
+        }
+
+        const oldValue = auditService.pickModelValues(score, ['id', 'team_id', 'player_id', 'map_id', 'score', 'attempt_no', 'is_manual']);
+        score.score = Math.round(scoreValue);
+        score.is_manual = 1;
+        await score.save({ transaction });
+
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier_score',
+            entity_id: score.id,
+            action: 'manual_update',
+            old_value: oldValue,
+            new_value: auditService.pickModelValues(score, ['id', 'team_id', 'player_id', 'map_id', 'score', 'attempt_no', 'is_manual']),
+            operator_id: operatorId
+        }, { transaction });
+
+        return score;
     });
-    if (!score) {
-        throw makeError('成绩不存在', 404);
-    }
-
-    const oldValue = auditService.pickModelValues(score, ['id', 'team_id', 'player_id', 'map_id', 'score', 'attempt_no', 'is_manual']);
-    score.score = Math.round(scoreValue);
-    score.is_manual = 1;
-    await score.save();
-
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier_score',
-        entity_id: score.id,
-        action: 'manual_update',
-        old_value: oldValue,
-        new_value: auditService.pickModelValues(score, ['id', 'team_id', 'player_id', 'map_id', 'score', 'attempt_no', 'is_manual']),
-        operator_id: operatorId
-    });
-
-    return score;
 };
 
 const getQualRanking = async (tid) => {
@@ -774,11 +859,12 @@ const getQualRanking = async (tid) => {
     });
 };
 
-const getEligibleRankedTeams = async (tid, limit) => {
+const getEligibleRankedTeams = async (tid, limit, options = {}) => {
     const teams = await TTeam.findAll({
         where: { t_id: tid, status: 1, qual_rank: { [Op.ne]: null } },
         include: [{ model: TPlayer, as: 'players' }],
-        order: [['qual_rank', 'ASC'], ['qual_score', 'DESC'], ['id', 'ASC']]
+        order: [['qual_rank', 'ASC'], ['qual_score', 'DESC'], ['id', 'ASC']],
+        transaction: options.transaction
     });
 
     return teams
@@ -787,68 +873,72 @@ const getEligibleRankedTeams = async (tid, limit) => {
 };
 
 const lockQualifierRanking = async (tid, operatorId) => {
-    const tournament = await ensureTournament(tid);
-    assertQualifierUnlocked(tournament);
+    return sequelize.transaction(async (transaction) => {
+        const tournament = await ensureTournament(tid, { transaction, lock: transaction.LOCK.UPDATE });
+        assertQualifierUnlocked(tournament);
 
-    const topN = Number(tournament.qual_top_n || 32);
-    await calculateRanking(tid, operatorId);
-    const qualifiedTeams = await getEligibleRankedTeams(tid, topN);
-    if (qualifiedTeams.length < topN) {
-        throw makeError(`锁榜需要 ${topN} 支通过正赛资格的队伍，当前只有 ${qualifiedTeams.length} 支`);
-    }
+        const topN = Number(tournament.qual_top_n || 32);
+        await calculateRanking(tid, operatorId, { transaction });
+        const qualifiedTeams = await getEligibleRankedTeams(tid, topN, { transaction });
+        if (qualifiedTeams.length < topN) {
+            throw makeError(`锁榜需要 ${topN} 支通过正赛资格的队伍，当前只有 ${qualifiedTeams.length} 支`);
+        }
 
-    const oldValue = auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']);
-    tournament.qual_locked_at = new Date();
-    tournament.qual_locked_by = operatorId || null;
-    tournament.qual_locked_top_n = topN;
-    await tournament.save();
+        const oldValue = auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']);
+        tournament.qual_locked_at = new Date();
+        tournament.qual_locked_by = operatorId || null;
+        tournament.qual_locked_top_n = topN;
+        await tournament.save({ transaction });
 
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier',
-        entity_id: null,
-        action: 'lock_ranking',
-        old_value: oldValue,
-        new_value: {
-            ...auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']),
-            qualified_team_ids: qualifiedTeams.map(team => team.id)
-        },
-        operator_id: operatorId
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier',
+            entity_id: null,
+            action: 'lock_ranking',
+            old_value: oldValue,
+            new_value: {
+                ...auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']),
+                qualified_team_ids: qualifiedTeams.map(team => team.id)
+            },
+            operator_id: operatorId
+        }, { transaction });
+
+        return {
+            message: '资格赛排名已锁定',
+            tournament,
+            qualifiedTeams
+        };
     });
-
-    return {
-        message: '资格赛排名已锁定',
-        tournament,
-        qualifiedTeams
-    };
 };
 
 const unlockQualifierRanking = async (tid, operatorId) => {
-    const tournament = await ensureTournament(tid);
-    if (!tournament.qual_locked_at) {
-        throw makeError('资格赛排名未锁定');
-    }
+    return sequelize.transaction(async (transaction) => {
+        const tournament = await ensureTournament(tid, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!tournament.qual_locked_at) {
+            throw makeError('资格赛排名未锁定');
+        }
 
-    const oldValue = auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']);
-    tournament.qual_locked_at = null;
-    tournament.qual_locked_by = null;
-    tournament.qual_locked_top_n = null;
-    await tournament.save();
+        const oldValue = auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']);
+        tournament.qual_locked_at = null;
+        tournament.qual_locked_by = null;
+        tournament.qual_locked_top_n = null;
+        await tournament.save({ transaction });
 
-    await auditService.writeAuditLog({
-        t_id: tid,
-        entity_type: 'qualifier',
-        entity_id: null,
-        action: 'unlock_ranking',
-        old_value: oldValue,
-        new_value: auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']),
-        operator_id: operatorId
+        await auditService.writeAuditLog({
+            t_id: tid,
+            entity_type: 'qualifier',
+            entity_id: null,
+            action: 'unlock_ranking',
+            old_value: oldValue,
+            new_value: auditService.pickModelValues(tournament, ['id', 'qual_locked_at', 'qual_locked_by', 'qual_locked_top_n']),
+            operator_id: operatorId
+        }, { transaction });
+
+        return {
+            message: '资格赛排名已解锁',
+            tournament
+        };
     });
-
-    return {
-        message: '资格赛排名已解锁',
-        tournament
-    };
 };
 
 module.exports = {
