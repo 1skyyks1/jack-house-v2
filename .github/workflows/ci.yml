@@ -33,7 +33,11 @@ jobs:
           pnpm --dir jack-house-analytics --filter @jack-house-analytics/server-core pack --pack-destination "$GITHUB_WORKSPACE/.packed/jack-house-analytics"
           pnpm --dir jack-house-analytics --filter @jack-house-analytics/server-express pack --pack-destination "$GITHUB_WORKSPACE/.packed/jack-house-analytics"
       - name: Install backend
-        run: npm ci
+        # Refresh only the analytics tarballs built above, then keep the actual
+        # installation deterministic with npm ci.
+        run: |
+          npm update @jack-house-analytics/server-core @jack-house-analytics/server-express --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci
         working-directory: jack-house-web/backend
       - name: Test backend
         run: npm test
