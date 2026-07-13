@@ -200,17 +200,20 @@ test('leaveTeam self-heals an orphan player record even after registration close
     assert.deepEqual(events, ['player', 'audit']);
 });
 
-test('score import uses one transaction for game replacement, match update, propagation, and audit', async (t) => {
+test('score import uses the shared stage mappool and one transaction for all writes', async (t) => {
     const transaction = { LOCK: { UPDATE: 'UPDATE' } };
     const writes = [];
     const poolMap = { id: 11, map_id: 101, type: 'FU' };
     const round = {
+        dataValues: { mappool: [] },
         first_to: 1,
         id: 3,
-        mappool: [poolMap],
+        // Sequelize leaves this eagerly-loaded association stale after
+        // setDataValue(), which reproduces a loser round sharing another pool.
+        mappool: [],
         t_id: 1,
         setDataValue(key, value) {
-            this[key] = value;
+            this.dataValues[key] = value;
         }
     };
     const initialMatch = {

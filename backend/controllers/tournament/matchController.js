@@ -395,6 +395,9 @@ exports.fetchMatchScores = async (req, res) => {
         }
         const { maps: stageMappool } = await roundStageService.listStageMappool(tid, match.round.id);
         match.round.setDataValue('mappool', stageMappool);
+        if (stageMappool.length === 0) {
+            return res.status(400).json({ message: req.t('tournament.errors.matchMappoolEmpty') });
+        }
 
         const team1Players = match.team1?.players || [];
         const team2Players = match.team2?.players || [];
@@ -428,8 +431,11 @@ exports.fetchMatchScores = async (req, res) => {
 
         // 图池映射
         const mapIdToPool = new Map();
-        for (const m of match.round.mappool) {
-            mapIdToPool.set(m.map_id, m);
+        // Do not read match.round.mappool here. Sequelize keeps the eagerly-loaded
+        // association as an own property, so setDataValue() only changes toJSON()
+        // output and leaves that property stale for rounds sharing another pool.
+        for (const m of stageMappool) {
+            mapIdToPool.set(Number(m.map_id), m);
         }
 
         const games = osuMatchService.getGameEvents(mpMatch);
@@ -482,6 +488,11 @@ exports.fetchMatchScores = async (req, res) => {
             const pickedGames = Array.from(latestPickedGameByMapId.values())
                 .sort((a, b) => Number(a.pickAction.sort_order || a.fallbackOrder) - Number(b.pickAction.sort_order || b.fallbackOrder)
                     || Number(a.pickAction.id) - Number(b.pickAction.id));
+            if (pickedGames.length === 0) {
+                const error = new Error('未匹配到已选谱面的比赛成绩');
+                error.status = 400;
+                throw error;
+            }
             const gameRows = [];
             const gameMetadata = [];
             let team1Total = 0;
@@ -533,6 +544,12 @@ exports.fetchMatchScores = async (req, res) => {
                     p2Score,
                     winner
                 });
+            }
+
+            if (gameRows.length === 0) {
+                const error = new Error('未匹配到参赛选手成绩');
+                error.status = 400;
+                throw error;
             }
 
             const oldGames = await TGame.findAll({
@@ -615,6 +632,8 @@ exports.fetchMatchScores = async (req, res) => {
         });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: req.t('common.serverError') });
+        res.status(error.status || 500).json({
+            message: error.status ? translateMessage(req, error.message) : req.t('common.serverError')
+        });
     }
 };

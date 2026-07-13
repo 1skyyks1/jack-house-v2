@@ -20,6 +20,8 @@ const messageKeyMap = {
     '对局不存在': 'tournament.errors.gameNotFound',
     '请先设置 MP 房间 ID': 'tournament.errors.mpIdRequired',
     '无法获取比赛数据': 'tournament.errors.fetchMatchFailed',
+    '未匹配到已选谱面的比赛成绩': 'tournament.errors.noPickedMatchScores',
+    '未匹配到参赛选手成绩': 'tournament.errors.noPlayerMatchScores',
     '分数获取完成': 'tournament.messages.scoresFetched',
     'Roll 胜方已记录': 'tournament.messages.rollRecorded',
     '操作已记录': 'tournament.messages.actionRecorded',
