@@ -184,6 +184,17 @@
     "invalidImageType": "Only image files are allowed",
     "unexpectedFile": "Unexpected upload field"
   },
+  "maniaAnalyser": {
+    "invalidBeatmapId": "Invalid beatmap ID",
+    "beatmapNotFound": "Beatmap not found",
+    "beatmapTooLarge": "The beatmap file is too large to analyse",
+    "notMania": "This beatmap is not an osu!mania beatmap",
+    "only4k": "The difficulty analyser currently supports 4K beatmaps only",
+    "rateLimited": "Online beatmaps are being fetched too frequently; try again later",
+    "serviceUnavailable": "The osu! beatmap service is unavailable",
+    "upstreamTimeout": "Fetching the beatmap timed out; try again later",
+    "fetchFailed": "Unable to fetch the beatmap from osu!"
+  },
   "common": {
     "serverError": "Internal server error"
   },

@@ -8,6 +8,10 @@ const PackMap = sequelize.define('PackMap', {
         autoIncrement: true,
         primaryKey: true,
     },
+    beatmap_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
     pack_id: {
         type: DataTypes.INTEGER,
         allowNull: false,

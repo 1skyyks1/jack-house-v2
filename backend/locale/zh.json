@@ -184,6 +184,17 @@
     "invalidImageType": "只允许上传图片文件",
     "unexpectedFile": "上传字段不正确"
   },
+  "maniaAnalyser": {
+    "invalidBeatmapId": "Beatmap ID 无效",
+    "beatmapNotFound": "没有找到该谱面",
+    "beatmapTooLarge": "谱面文件过大，无法分析",
+    "notMania": "该谱面不是 osu!mania 谱面",
+    "only4k": "当前难度分析仅支持 4K 谱面",
+    "rateLimited": "在线谱面获取过于频繁，请稍后再试",
+    "serviceUnavailable": "osu! 谱面服务暂不可用",
+    "upstreamTimeout": "获取谱面超时，请稍后重试",
+    "fetchFailed": "无法从 osu! 获取谱面"
+  },
   "common": {
     "serverError": "服务器内部错误"
   },

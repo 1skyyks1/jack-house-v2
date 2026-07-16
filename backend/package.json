@@ -8,6 +8,7 @@
     "backfill:rich-text-assets": "node scripts/backfill-rich-text-assets.js",
     "cleanup:rich-text-assets": "node scripts/cleanup-rich-text-assets.js",
     "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
+    "migrate:pack-map-beatmap-id": "node scripts/migrate-pack-map-beatmap-id.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "test": "node --test test/*.test.js"
   },

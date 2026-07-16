@@ -68,6 +68,7 @@ exports.packFromOsu = async (req, res) => {
             const packMapData = beatmapset.beatmaps.map(beatmap => {
                 return {
                     pack_id: pack.pack_id,
+                    beatmap_id: beatmap.id,
                     rating: beatmap.difficulty_rating,
                     length: beatmap.total_length,
                     real_length: beatmap.hit_length,
@@ -139,6 +140,7 @@ exports.updatePackFromOsu = async (req, res) => {
 
             const packMapData = beatmapset.beatmaps.map(beatmap => ({
                 pack_id: existingPack.pack_id,
+                beatmap_id: beatmap.id,
                 rating: beatmap.difficulty_rating,
                 length: beatmap.total_length,
                 real_length: beatmap.hit_length,
