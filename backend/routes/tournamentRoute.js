@@ -85,6 +85,8 @@ router.get('/:tid/bracket', matchController.getBracket);
 // 正赛表现
 router.get('/:tid/performance', matchController.getPerformance);
 
+router.get('/:tid/mappool-stats', matchController.getMappoolStats);
+
 // 轮次图池
 router.get('/:tid/round/:roundId/mappool', matchController.getRoundMappool);
 

@@ -302,6 +302,117 @@ exports.getPerformance = async (req, res) => {
 };
 
 // 生成 RO32 对阵表（根据资格赛排名）
+// Get main-stage mappool protect/ban/pick stats grouped by shared stage.
+exports.getMappoolStats = async (req, res) => {
+    try {
+        const { tid } = req.params;
+        const rounds = await TRound.findAll({
+            where: { t_id: tid },
+            include: [{ model: TMappool, as: 'mappool' }],
+            order: [['order', 'ASC'], ['id', 'ASC']]
+        });
+
+        const roundsByStage = new Map();
+        for (const round of rounds) {
+            const stage = roundStageService.getRoundStage(round);
+            if (!stage) continue;
+            if (!roundsByStage.has(stage)) roundsByStage.set(stage, []);
+            roundsByStage.get(stage).push(round);
+        }
+
+        const matches = await TMatch.findAll({
+            include: [
+                {
+                    model: TRound,
+                    as: 'round',
+                    where: { t_id: tid },
+                    attributes: ['id', 'name', 'bracket_type', 'order']
+                },
+                {
+                    model: TMatchAction,
+                    as: 'actions',
+                    required: false,
+                    include: [{ model: TMappool, as: 'map' }]
+                }
+            ],
+            order: [[{ model: TRound, as: 'round' }, 'order', 'ASC'], ['slot_no', 'ASC'], ['id', 'ASC']]
+        });
+
+        const matchesByStage = new Map();
+        for (const match of matches) {
+            const stage = roundStageService.getRoundStage(match.round);
+            if (!stage) continue;
+            if (!matchesByStage.has(stage)) matchesByStage.set(stage, []);
+            matchesByStage.get(stage).push(match);
+        }
+
+        const stages = [];
+        for (const stage of roundStageService.STAGE_ORDER) {
+            const stageRounds = roundsByStage.get(stage) || [];
+            if (stageRounds.length === 0) continue;
+
+            const { maps } = await roundStageService.listStageMappool(tid, stageRounds[0].id);
+            if (maps.length === 0) continue;
+
+            const stageMatches = matchesByStage.get(stage) || [];
+            const isComplete = stageMatches.length > 0 && stageMatches.every(match => Number(match.status) === 2);
+            const validMatches = stageMatches.filter(match => Number(match.status) === 2 && String(match.result_type || 'normal') === 'normal');
+            const validMatchIds = new Set(validMatches.map(match => Number(match.id)));
+            const denominator = validMatches.length;
+            const statsByMapKey = new Map();
+
+            for (const map of maps) {
+                statsByMapKey.set(getMappoolStatsMapKey(map), {
+                    map,
+                    protect_count: 0,
+                    ban_count: 0,
+                    pick_count: 0
+                });
+            }
+
+            for (const match of stageMatches) {
+                if (!validMatchIds.has(Number(match.id))) continue;
+                for (const action of match.actions || []) {
+                    if (!['protect', 'ban', 'pick'].includes(action.action_type)) continue;
+                    const mapKey = action.map ? getMappoolStatsMapKey(action.map) : null;
+                    const stats = mapKey ? statsByMapKey.get(mapKey) : null;
+                    if (!stats) continue;
+                    if (action.action_type === 'protect') stats.protect_count++;
+                    if (action.action_type === 'ban') stats.ban_count++;
+                    if (action.action_type === 'pick') stats.pick_count++;
+                }
+            }
+
+            stages.push({
+                key: stage,
+                label: roundStageService.getStageLabel(stage),
+                is_complete: isComplete,
+                match_count: stageMatches.length,
+                completed_match_count: stageMatches.filter(match => Number(match.status) === 2).length,
+                valid_match_count: denominator,
+                maps: Array.from(statsByMapKey.values()).map(stats => ({
+                    map: auditService.pickModelValues(stats.map),
+                    protect_count: stats.protect_count,
+                    ban_count: stats.ban_count,
+                    pick_count: stats.pick_count,
+                    protect_rate: denominator > 0 ? stats.protect_count / denominator : null,
+                    ban_rate: denominator > 0 ? stats.ban_count / denominator : null,
+                    pick_rate: denominator > 0 ? stats.pick_count / denominator : null
+                }))
+            });
+        }
+
+        res.json({ stages });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: req.t('common.serverError') });
+    }
+};
+
+function getMappoolStatsMapKey(map) {
+    return `${String(map?.type || '').trim().toUpperCase()}-${Number(map?.map_id || 0)}`;
+}
+
 exports.generateBracket = async (req, res) => {
     try {
         const { tid } = req.params;

@@ -3,7 +3,7 @@ const test = require('node:test');
 const { Op } = require('sequelize');
 
 const sequelize = require('../config/db');
-const { TAuditLog, Tournament, TGame, TMatch, TMatchAction, TPlayer, TQualImport, TQualMappool, TQualScore, TStaff, TTeam } = require('../models/tournament');
+const { TAuditLog, Tournament, TGame, TMatch, TMatchAction, TPlayer, TQualImport, TQualMappool, TQualScore, TRound, TStaff, TTeam } = require('../models/tournament');
 const User = require('../models/user/user');
 const auditService = require('../services/tournament/auditService');
 const bracketService = require('../services/tournament/bracketService');
@@ -308,6 +308,69 @@ test('score import uses the shared stage mappool and one transaction for all wri
     assert.equal(responseBody.team1_score, 1);
     assert.equal(responseBody.team2_score, 0);
     assert.equal(responseBody.winner, 'team1');
+});
+
+test('mappool stats group winner and loser rounds by stage and exclude FF/WBD matches', async (t) => {
+    const qfWinnerRound = { id: 3, name: 'QFWB', bracket_type: 0, order: 3 };
+    const qfLoserRound = { id: 4, name: 'QFLB-A', bracket_type: 1, order: null };
+    const mapA = { id: 11, artist: 'artist a', map_id: 101, mapper: 'mapper a', title: 'title a', type: 'FU' };
+    const mapB = { id: 12, artist: 'artist b', map_id: 102, mapper: 'mapper b', title: 'title b', type: 'DS' };
+    const normalMatch = {
+        id: 21,
+        actions: [
+            { action_type: 'protect', map: mapA },
+            { action_type: 'ban', map: mapB },
+            { action_type: 'pick', map: mapA }
+        ],
+        result_type: 'normal',
+        round: qfWinnerRound,
+        status: 2
+    };
+    const ffMatch = {
+        id: 22,
+        actions: [
+            { action_type: 'ban', map: mapA },
+            { action_type: 'pick', map: mapB }
+        ],
+        result_type: 'ff',
+        round: qfLoserRound,
+        status: 2
+    };
+
+    patchMethod(t, TRound, 'findAll', async () => [qfWinnerRound, qfLoserRound]);
+    patchMethod(t, TMatch, 'findAll', async () => [normalMatch, ffMatch]);
+    patchMethod(t, roundStageService, 'listStageMappool', async () => ({ maps: [mapA, mapB] }));
+
+    let responseBody;
+    const req = {
+        params: { tid: '1' },
+        t: (key) => key
+    };
+    const res = {
+        json(body) {
+            responseBody = body;
+            return this;
+        },
+        status() {
+            return this;
+        }
+    };
+
+    await matchController.getMappoolStats(req, res);
+
+    assert.equal(responseBody.stages.length, 1);
+    const qfStage = responseBody.stages[0];
+    assert.equal(qfStage.key, 'qf');
+    assert.equal(qfStage.is_complete, true);
+    assert.equal(qfStage.match_count, 2);
+    assert.equal(qfStage.completed_match_count, 2);
+    assert.equal(qfStage.valid_match_count, 1);
+    assert.equal(qfStage.maps[0].protect_count, 1);
+    assert.equal(qfStage.maps[0].ban_count, 0);
+    assert.equal(qfStage.maps[0].pick_count, 1);
+    assert.equal(qfStage.maps[0].protect_rate, 1);
+    assert.equal(qfStage.maps[1].ban_count, 1);
+    assert.equal(qfStage.maps[1].ban_rate, 1);
 });
 
 test('referee action validation and audit share the locked match transaction', async (t) => {

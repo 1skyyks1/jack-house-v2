@@ -46,6 +46,13 @@ const getRoundStage = (round) => {
         if (loserRoundNo === 6 || loserRoundNo === 7) return 'f';
         if (loserRoundNo === 8) return 'gf';
 
+        if (name.includes('ro32') || name.includes('round of 32')) return 'ro32';
+        if (name.includes('ro16') || name.includes('round of 16')) return 'ro16';
+        if (name.includes('quarter') || name.includes('qf')) return 'qf';
+        if (name.includes('semi') || name.includes('sf')) return 'sf';
+        if (name.includes('grand final') || name.includes('gf')) return 'gf';
+        if (name.includes('final') || /^f(?:lb|[-_\s]|$)/.test(name)) return 'f';
+
         if (name.includes('semi')) return 'f';
         if (name.includes('grand final')) return 'gf';
         if (name.includes('final')) return 'f';
