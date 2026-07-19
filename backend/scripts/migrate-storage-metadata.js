@@ -16,17 +16,6 @@ const migrations = {
         ],
         backfill: "UPDATE `post_file` SET `storage_provider` = COALESCE(`storage_provider`, 'minio'), `object_key` = COALESCE(`object_key`, `file_url`) WHERE `storage_provider` IS NULL OR `object_key` IS NULL",
     },
-    home_img: {
-        columns: [
-            ['storage_provider', "VARCHAR(32) NULL COMMENT '存储 provider' AFTER `minio_img_name`"],
-            ['object_key', "VARCHAR(255) NULL COMMENT '存储对象 key' AFTER `storage_provider`"],
-            ['public_url', "VARCHAR(1024) NULL COMMENT '公开访问 URL' AFTER `object_key`"],
-            ['download_url', "VARCHAR(1024) NULL COMMENT '下载 URL' AFTER `public_url`"],
-            ['mime_type', "VARCHAR(255) NULL COMMENT 'MIME 类型' AFTER `download_url`"],
-        ],
-        indexes: [],
-        backfill: "UPDATE `home_img` SET `storage_provider` = COALESCE(`storage_provider`, 'minio'), `object_key` = COALESCE(`object_key`, `minio_img_name`) WHERE `storage_provider` IS NULL OR `object_key` IS NULL",
-    },
     badge: {
         columns: [
             ['storage_provider', "VARCHAR(32) NULL COMMENT 'storage provider' AFTER `minio_img_name`"],

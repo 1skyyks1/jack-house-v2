@@ -16,18 +16,6 @@
   "dashboard": {
     "getCountFailed": "获取用户及帖子数量失败"
   },
-  "homeImg": {
-    "getListFailed": "获取头图列表失败",
-    "getFailed": "获取头图失败",
-    "uploadNoFile": "没有图片上传",
-    "uploadSuccess": "头图上传成功",
-    "uploadFailed": "头图上传失败",
-    "notFound": "头图不存在",
-    "updateSuccess": "更新成功",
-    "updateFailed": "更新失败",
-    "deleteSuccess": "删除成功",
-    "deleteFailed": "删除失败"
-  },
   "packComment": {
     "empty": "评论内容不能为空",
     "notFound": "要评论的图包不存在",
@@ -194,6 +182,32 @@
     "serviceUnavailable": "osu! 谱面服务暂不可用",
     "upstreamTimeout": "获取谱面超时，请稍后重试",
     "fetchFailed": "无法从 osu! 获取谱面"
+  },
+  "aiImage": {
+    "invalidImageType": "参考图仅支持 JPG、PNG 或 WebP",
+    "errors": {
+      "active_job_exists": "你已有一个生图任务正在进行，请等待完成后再试",
+      "daily_quota_exhausted": "你今天的生图额度已用完",
+      "global_concurrency_limit": "当前使用人数较多，请稍后再试",
+      "invalid_idempotency_key": "请求标识无效，请刷新页面后重试",
+      "invalid_reference_count": "参考图数量必须为 1 至 10 张",
+      "invalid_request_type": "生图类型无效",
+      "invalid_size": "不支持这个图片尺寸",
+      "migration_required": "生图数据库尚未初始化",
+      "prompt_required": "请输入提示词",
+      "prompt_too_long": "提示词过长",
+      "service_not_configured": "生图服务尚未配置",
+      "submission_rate_limited": "提交过于频繁，请稍后再试",
+      "unexpected_images": "纯文字生图不能携带参考图",
+      "uploads_too_large": "参考图总大小超过限制",
+      "job_not_found": "没有找到这个生图任务",
+      "request_rejected": "生图请求未通过，请调整内容后重试",
+      "result_expired": "图片结果已过期",
+      "result_unavailable": "图片结果暂时无法获取",
+      "service_busy": "当前使用人数较多，请稍后重试",
+      "service_unavailable": "生图功能暂时不可用，请稍后重试",
+      "unknown": "生图服务暂时不可用，请稍后再试"
+    }
   },
   "common": {
     "serverError": "服务器内部错误"

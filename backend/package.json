@@ -9,6 +9,9 @@
     "cleanup:rich-text-assets": "node scripts/cleanup-rich-text-assets.js",
     "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
     "migrate:pack-map-beatmap-id": "node scripts/migrate-pack-map-beatmap-id.js",
+    "migrate:badges-to-github": "node scripts/migrate-badges-to-github.js",
+    "migrate:event-stage-backgrounds-to-github": "node scripts/migrate-event-stage-backgrounds-to-github.js",
+    "migrate:ai-image-jobs": "node scripts/migrate-ai-image-jobs.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "test": "node --test test/*.test.js"
   },
@@ -16,8 +19,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.921.0",
-    "@aws-sdk/s3-request-presigner": "^3.921.0",
     "@jack-house-analytics/server-core": "file:../../.packed/jack-house-analytics/jack-house-analytics-server-core-0.1.1.tgz",
     "@jack-house-analytics/server-express": "file:../../.packed/jack-house-analytics/jack-house-analytics-server-express-0.1.1.tgz",
     "bcryptjs": "^2.4.3",
@@ -25,6 +26,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "form-data": "^4.0.6",
     "helmet": "^8.0.0",
     "i18next": "^25.3.2",
     "i18next-fs-backend": "^2.6.0",

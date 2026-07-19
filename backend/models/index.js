@@ -3,7 +3,6 @@ const PostTranslation = require('./post/postTranslation');
 const PostFile = require('./post/postFile');
 const PostComment = require('./post/postComment');
 const User = require('./user/user');
-const HomeImg = require('../models/homeImg')
 const Pack = require('./pack/pack');
 const PackMap = require('./pack/packMap');
 const Tag = require('./pack/tag');
@@ -36,7 +35,6 @@ RichTextAssetReference.belongsTo(RichTextAsset, { foreignKey: 'rich_text_asset_i
 User.hasMany(Post, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 User.hasMany(PostFile, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(PostComment, { foreignKey: 'user_id', onDelete: 'CASCADE' })
-User.hasMany(HomeImg, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 User.hasMany(Pack, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(EventScore, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.belongsToMany(Badge, {
@@ -51,8 +49,6 @@ User.belongsToMany(Role, {
     otherKey: 'role_id',
     as: 'roles'
 })
-
-HomeImg.belongsTo(User, {foreignKey: 'user_id'})
 
 Pack.belongsToMany(Tag, {
     through: 'pack_tags',
@@ -105,7 +101,6 @@ module.exports = {
     PostComment,
     User,
     Badge,
-    HomeImg,
     Pack,
     PackMap,
     Tag,

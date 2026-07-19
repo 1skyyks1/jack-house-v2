@@ -48,8 +48,8 @@ const trimSlashes = (value = '') => value.replace(/^\/+|\/+$/g, '');
 
 const getRichTextBucket = () => storage.getBucketName(
     RICHTEXT_STORAGE_SCOPE,
-    ['MINIO_RICHTEXT_BUCKET', 'MINIO_HOMEIMG_BUCKET'],
-    storage.getProviderName(RICHTEXT_STORAGE_SCOPE) === 'github' ? 'rich-text' : null
+    [],
+    'rich-text'
 );
 
 const getManagedGithubRepo = () => ({
@@ -114,17 +114,6 @@ const resolveManagedRichTextSource = (source) => {
         return {
             storage_provider: 'github',
             object_key: trimSlashes(parts.slice(3).join('/')),
-            public_url: source,
-            download_url: source,
-        };
-    }
-
-    const richTextProxyMatch = url.pathname.match(/\/upload\/rich-text\/image\/([^/]+)$/);
-    if (richTextProxyMatch) {
-        const objectName = decodeURIComponent(richTextProxyMatch[1]);
-        return {
-            storage_provider: 'minio',
-            object_key: objectName,
             public_url: source,
             download_url: source,
         };

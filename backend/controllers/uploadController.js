@@ -9,13 +9,9 @@ const RICHTEXT_STORAGE_SCOPE = 'RICHTEXT';
 
 const getRichTextBucket = () => storage.getBucketName(
     RICHTEXT_STORAGE_SCOPE,
-    ['MINIO_RICHTEXT_BUCKET', 'MINIO_HOMEIMG_BUCKET'],
-    storage.getProviderName(RICHTEXT_STORAGE_SCOPE) === 'github' ? 'rich-text' : null
+    [],
+    'rich-text'
 );
-
-const getBackendPublicUrl = (req) => {
-    return process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-};
 
 const handleRichTextImageUpload = handleUpload(richTextImageUpload.single('file'));
 
@@ -52,7 +48,7 @@ exports.uploadRichTextImage = [
                 size: optimized.size,
             });
 
-            const url = uploaded.publicUrl || `${getBackendPublicUrl(req)}/upload/rich-text/image/${encodeURIComponent(uploaded.objectName)}`;
+            const url = uploaded.publicUrl || uploaded.downloadUrl || uploaded.url;
             await recordUploadedRichTextAsset({
                 user_id: req.user.user_id,
                 storage_provider: uploaded.provider,
@@ -86,22 +82,3 @@ exports.uploadRichTextImage = [
         }
     }
 ];
-
-exports.getRichTextImage = async (req, res) => {
-    const bucket = getRichTextBucket();
-    if (!bucket) {
-        return res.status(404).json({ message: req.t('upload.notFound') });
-    }
-
-    try {
-        const objectName = decodeURIComponent(req.params.objectName);
-        const url = await storage.getDownloadUrl(RICHTEXT_STORAGE_SCOPE, {
-            provider: 'minio',
-            bucket,
-            objectName,
-        });
-        res.redirect(url);
-    } catch (error) {
-        res.status(404).json({ message: req.t('upload.notFound') });
-    }
-};

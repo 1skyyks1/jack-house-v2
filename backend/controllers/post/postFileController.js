@@ -4,7 +4,6 @@ const { Op } = require("sequelize");
 // const { fetchUploadUrl, getSign, getAuthCode } = require('../../utils/pan');
 const { postFileUpload } = require('../../config/multer')
 const { handleUpload } = require('../../middleware/uploadErrorHandler')
-// const { uploadToStorage, preSign } = require('../../utils/tebiS3')
 const fs = require('fs')
 const path = require('path')
 const storage = require('../../services/storage')
@@ -124,7 +123,7 @@ const normalizeCreatePostFilePayload = (body) => {
     const publicUrl = normalizeOptionalString(body.public_url);
     const downloadUrl = normalizeOptionalString(body.download_url);
     const requestedProvider = normalizeOptionalString(body.storage_provider);
-    const provider = requestedProvider || ((publicUrl || downloadUrl) ? EXTERNAL_STORAGE_PROVIDER : 'minio');
+    const provider = requestedProvider || ((publicUrl || downloadUrl) ? EXTERNAL_STORAGE_PROVIDER : 'github');
     const objectKey = normalizeOptionalString(body.object_key) || fileUrl;
     const mimeType = normalizeOptionalString(body.mime_type);
     const checksum = normalizeOptionalString(body.checksum);
@@ -141,7 +140,7 @@ const normalizeCreatePostFilePayload = (body) => {
         throw error;
     }
 
-    if (provider && !['minio', 'github', EXTERNAL_STORAGE_PROVIDER].includes(provider)) {
+    if (provider && !['github', EXTERNAL_STORAGE_PROVIDER].includes(provider)) {
         const error = new Error('postFile.invalidStorageProvider');
         error.status = 400;
         throw error;

@@ -1,23 +1,18 @@
 const { Badge } = require('../../models');
-const upload = require('../../config/multer')
+const { badgeUpload } = require('../../config/multer')
 const { handleUpload } = require('../../middleware/uploadErrorHandler')
 const fs = require('fs')
 const sequelize = require('../../config/db')
-const storage = require('../../services/storage')
+const {
+    deleteBadgeFile,
+    getBadgeImageUrl,
+    uploadBadgeFile,
+} = require('../../services/badgeStorage')
 const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer')
-
-const BADGES_STORAGE_SCOPE = 'BADGES';
-const getBadgeObjectName = (badge) => badge.object_key || badge.minio_img_name;
-const getBadgeProvider = (badge) => badge.storage_provider || 'minio';
-const getBadgesBucket = () => storage.getBucketName(
-    BADGES_STORAGE_SCOPE,
-    ['MINIO_BADGES_BUCKET'],
-    storage.getProviderName(BADGES_STORAGE_SCOPE) === 'github' ? 'badges' : null
-);
 
 // 上传牌子
 exports.uploadBadge = [
-    handleUpload(upload.badgeUpload.single('file')),
+    handleUpload(badgeUpload.single('file')),
     async (req, res) => {
         const { name, redirect_url } = req.body;
         const file = req.file;
@@ -33,8 +28,7 @@ exports.uploadBadge = [
             const optimized = await optimizeImageFile(file, { convertToWebp: true });
             const checksum = await hashFile(filePath);
             const objectName = buildContentHashObjectName(checksum, optimized.mimeType, fileName);
-            const uploaded = await storage.uploadFile(BADGES_STORAGE_SCOPE, {
-                bucket: getBadgesBucket(),
+            const uploaded = await uploadBadgeFile({
                 objectName,
                 filePath,
                 mimeType: optimized.mimeType,
@@ -82,11 +76,7 @@ exports.getAllBadges = async (req, res) => {
         });
 
         const signBadge = rows.map(async (badge) => {
-            const signedUrl = badge.public_url || badge.download_url || await storage.getDownloadUrl(BADGES_STORAGE_SCOPE, {
-                provider: getBadgeProvider(badge),
-                bucket: getBadgesBucket(),
-                objectName: getBadgeObjectName(badge),
-            });
+            const signedUrl = await getBadgeImageUrl(badge);
             const badgeData = badge.toJSON();
             delete badgeData.minio_img_name;
             badgeData.signedUrl = signedUrl;
@@ -138,11 +128,7 @@ exports.deleteBadge = async (req, res) => {
         if (!badge) {
             return res.status(404).json({ message: req.t('badge.notFound') });
         }
-        await storage.deleteFile(BADGES_STORAGE_SCOPE, {
-            provider: getBadgeProvider(badge),
-            bucket: getBadgesBucket(),
-            objectName: getBadgeObjectName(badge),
-        });
+        await deleteBadgeFile(badge);
         await badge.destroy();
         res.status(200).json({ message: req.t('badge.deleteSuccess') });
     } catch (err) {

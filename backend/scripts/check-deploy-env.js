@@ -118,7 +118,6 @@ const validateCookies = () => {
 };
 
 const storageScopes = [
-    'HOMEIMG',
     'RICHTEXT',
     'BADGES',
     'EVENT_STAGE_BG',
@@ -127,9 +126,9 @@ const storageScopes = [
 
 const validateStorage = () => {
     storageScopes.forEach((scope) => {
-        const provider = String(process.env[`${scope}_STORAGE_PROVIDER`] || 'minio').toLowerCase();
-        if (!['minio', 'github'].includes(provider)) {
-            addError(`${scope}_STORAGE_PROVIDER must be minio or github`);
+        const provider = String(process.env[`${scope}_STORAGE_PROVIDER`] || '').toLowerCase();
+        if (provider !== 'github') {
+            addError(`${scope}_STORAGE_PROVIDER must be github; runtime uploads no longer support MinIO`);
         }
 
         if (provider === 'github') {
@@ -165,6 +164,34 @@ const validateUploadLimits = () => {
     }
 };
 
+const validateAiImage = () => {
+    requireEnv('AI_IMAGE_API_KEY', 'AI_IMAGE_API_KEY is required for the image generation tool');
+    const concurrency = Number(process.env.AI_IMAGE_GLOBAL_CONCURRENCY || 4);
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 4) {
+        addError('AI_IMAGE_GLOBAL_CONCURRENCY must be an integer from 1 to 4');
+    }
+
+    ['AI_IMAGE_DAILY_LIMIT_USER', 'AI_IMAGE_DAILY_LIMIT_ORG'].forEach((name) => {
+        const value = Number(process.env[name]);
+        if (process.env[name] && (!Number.isSafeInteger(value) || value <= 0)) {
+            addError(`${name} must be a positive integer`);
+        }
+    });
+
+    const sizes = String(process.env.AI_IMAGE_ALLOWED_SIZES || '1024x1024,1k,2k,2048x2048,2048x1152,2560x1440,1440x2560,4k,3840x2160,2160x3840')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean);
+    const isSupportedSize = (value) => {
+        if (/^[124]k$/.test(value)) return true;
+        const match = /^(\d{2,5})x(\d{2,5})$/.exec(value);
+        return Boolean(match) && Number(match[1]) * Number(match[2]) <= 8294400;
+    };
+    if (!sizes.length || sizes.some((value) => !isSupportedSize(value))) {
+        addError('AI_IMAGE_ALLOWED_SIZES must use 1k/2k/4k or WIDTHxHEIGHT values up to 8294400 pixels');
+    }
+};
+
 validateProfile();
 validateRuntime();
 validateDatabase();
@@ -173,6 +200,7 @@ validateCors();
 validateCookies();
 validateStorage();
 validateUploadLimits();
+validateAiImage();
 
 if (warnings.length > 0) {
     console.warn(warnings.map((message) => `Warning: ${message}`).join('\n'));

@@ -4,7 +4,6 @@ const authRoutes = require('./routes/authRoute');
 const postRoutes = require('./routes/postRoute');
 const postCommentRoutes = require('./routes/postCommentRoute');
 const postFileRoutes = require('./routes/postFileRoute');
-const homeImgRoutes = require('./routes/homeImgRoute')
 const dashboardRoutes = require('./routes/dashboardRoute')
 const packRoutes = require('./routes/packRoute')
 const tagRoutes = require('./routes/tagRoute')
@@ -25,6 +24,7 @@ const i18next = require('i18next');
 const Backend = require('i18next-fs-backend');
 const i18nextMiddleware = require('i18next-http-middleware');
 const csrfMiddleware = require('./middleware/csrfMiddleware');
+const aiImageModule = require('./modules/aiImage');
 require('dotenv').config();
 
 i18next.use(Backend).use(i18nextMiddleware.LanguageDetector).init({
@@ -143,7 +143,6 @@ app.use('/auth', osuLimiter, authRoutes);
 app.use('/post', commonLimiter, postRoutes);
 app.use('/comment', commonLimiter, postCommentRoutes);
 app.use('/postFile', commonLimiter, postFileRoutes);
-app.use('/homeImg', commonLimiter, homeImgRoutes);
 app.use('/dashboard', commonLimiter, dashboardRoutes);
 app.use('/pack', commonLimiter, packRoutes);
 app.use('/tag', commonLimiter, tagRoutes);
@@ -157,4 +156,5 @@ app.use('/tool', toolRoutes)
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${port}`);
+    aiImageModule.start();
 });

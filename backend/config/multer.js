@@ -34,22 +34,6 @@ const storage = multer.diskStorage({
     }
 });
 
-const imageUpload = multer({
-    storage: storage,
-    limits: { fileSize: 2 * 1024 * 1024 },
-    fileFilter: function (req, file, cb) {
-        const filetypes = /jpeg|jpg|png|gif|webp/;
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = filetypes.test(file.mimetype);
-
-        if (extname && mimetype) {
-            return cb(null, true);
-        } else {
-            return cb(new Error('upload.invalidImageType'), false);
-        }
-    }
-});
-
 const eventStageBgUpload = multer({
     storage: storage,
     limits: { fileSize: parseFileSize(process.env.EVENT_STAGE_BG_MAX_SIZE_MB, 1) },
@@ -137,8 +121,6 @@ const postFileUpload = multer({
 });
 
 module.exports = {
-    upload: multer({ storage: storage }),
-    imageUpload: imageUpload,
     eventStageBgUpload: eventStageBgUpload,
     badgeUpload: badgeUpload,
     richTextImageUpload: richTextImageUpload,

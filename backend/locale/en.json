@@ -16,18 +16,6 @@
   "dashboard": {
     "getCountFailed": "Failed to fetch user and post count"
   },
-  "homeImg": {
-    "getListFailed": "Failed to fetch home image list",
-    "getFailed": "Failed to fetch home images",
-    "uploadNoFile": "No image uploaded",
-    "uploadSuccess": "Home image uploaded successfully",
-    "uploadFailed": "Failed to upload home image",
-    "notFound": "Home image not found",
-    "updateSuccess": "Update successful",
-    "updateFailed": "Update failed",
-    "deleteSuccess": "Delete successful",
-    "deleteFailed": "Delete failed"
-  },
   "packComment": {
     "empty": "Comment content cannot be empty",
     "notFound": "The pack you want to comment on does not exist",
@@ -194,6 +182,32 @@
     "serviceUnavailable": "The osu! beatmap service is unavailable",
     "upstreamTimeout": "Fetching the beatmap timed out; try again later",
     "fetchFailed": "Unable to fetch the beatmap from osu!"
+  },
+  "aiImage": {
+    "invalidImageType": "Reference images must be JPG, PNG, or WebP",
+    "errors": {
+      "active_job_exists": "You already have an image job in progress",
+      "daily_quota_exhausted": "You have used today's image quota",
+      "global_concurrency_limit": "The image service is busy. Try again shortly",
+      "invalid_idempotency_key": "The request id is invalid. Refresh and try again",
+      "invalid_reference_count": "Image editing requires 1 to 10 reference images",
+      "invalid_request_type": "The image request type is invalid",
+      "invalid_size": "This image size is not available",
+      "migration_required": "The image job database has not been initialized",
+      "prompt_required": "Enter a prompt",
+      "prompt_too_long": "The prompt is too long",
+      "service_not_configured": "The image service has not been configured",
+      "submission_rate_limited": "Too many submissions. Try again shortly",
+      "unexpected_images": "Text generation cannot include reference images",
+      "uploads_too_large": "The reference images are too large",
+      "job_not_found": "This image job was not found",
+      "request_rejected": "The image request was not accepted. Adjust it and try again",
+      "result_expired": "The image result has expired",
+      "result_unavailable": "The image result is temporarily unavailable",
+      "service_busy": "Image generation is busy. Try again shortly",
+      "service_unavailable": "Image generation is temporarily unavailable. Try again shortly",
+      "unknown": "The image service is temporarily unavailable"
+    }
   },
   "common": {
     "serverError": "Internal server error"

@@ -4,7 +4,11 @@ const PROVIDERS = {
 };
 
 const getProviderName = (scope) => {
-    return (process.env[`${scope}_STORAGE_PROVIDER`] || 'minio').toLowerCase();
+    const providerName = process.env[`${scope}_STORAGE_PROVIDER`];
+    if (!providerName) {
+        throw new Error(`${scope}_STORAGE_PROVIDER is required`);
+    }
+    return providerName.toLowerCase();
 };
 
 const getBucketName = (scope, fallbackEnvNames = [], defaultBucket = null) => {
@@ -32,8 +36,12 @@ const getStorageProvider = (scope, providerOverride) => {
 };
 
 const uploadFile = async (scope, options) => {
-    const providerName = getProviderName(scope);
-    const uploaded = await getStorageProvider(scope).uploadFile({ scope, ...options });
+    const { provider: providerOverride, ...uploadOptions } = options;
+    const providerName = (providerOverride || getProviderName(scope)).toLowerCase();
+    if (providerName !== 'github') {
+        throw new Error(`Uploads are only supported by GitHub storage: ${scope}`);
+    }
+    const uploaded = await getStorageProvider(scope, providerName).uploadFile({ scope, ...uploadOptions });
 
     return {
         provider: providerName,
@@ -42,8 +50,8 @@ const uploadFile = async (scope, options) => {
         url: uploaded.url,
         publicUrl: uploaded.publicUrl || null,
         downloadUrl: uploaded.downloadUrl || uploaded.publicUrl || null,
-        mimeType: options.mimeType || null,
-        size: options.size || null,
+        mimeType: uploadOptions.mimeType || null,
+        size: uploadOptions.size || null,
     };
 };
 

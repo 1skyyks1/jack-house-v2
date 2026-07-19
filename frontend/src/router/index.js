@@ -156,11 +156,6 @@ const router = createRouter({
                     component: () => import('../views/admin/postFiles.vue')
                 },
                 {
-                    path: 'homeImgs',
-                    name: 'homeImgs',
-                    component: () => import('../views/admin/homeImgs.vue')
-                },
-                {
                     path: 'events',
                     name: 'events',
                     component: () => import('../views/admin/events.vue')

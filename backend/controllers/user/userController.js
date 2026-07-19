@@ -2,11 +2,10 @@ const { User, Post, Badge } = require('../../models');
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 const { ROLES } = require("../../config/roles");
-const storage = require('../../services/storage');
+const { getBadgeImageUrl } = require('../../services/badgeStorage');
 
 const USER_SELF_UPDATE_FIELDS = ['password', 'qq', 'discord'];
 const ADMIN_UPDATE_FIELDS = ['user_name', 'password', 'email', 'role', 'status', 'osu_uid', 'avatar', 'qq', 'discord'];
-const BADGES_STORAGE_SCOPE = 'BADGES';
 const PUBLIC_USER_DETAIL_FIELDS = [
     'user_id',
     'user_name',
@@ -46,33 +45,6 @@ const parsePagination = (query, { defaultPageSize = 20, maxPageSize = 50 } = {})
         limit,
         offset: (page - 1) * limit,
     };
-};
-
-const getBadgeObjectName = (badge) => badge.object_key || badge.minio_img_name;
-
-const getBadgeProvider = (badge) => badge.storage_provider || 'minio';
-
-const getBadgesBucket = () => storage.getBucketName(
-    BADGES_STORAGE_SCOPE,
-    ['MINIO_BADGES_BUCKET'],
-    storage.getProviderName(BADGES_STORAGE_SCOPE) === 'github' ? 'badges' : null
-);
-
-const getBadgeImageUrl = async (badge) => {
-    if (badge.public_url || badge.download_url) {
-        return badge.public_url || badge.download_url;
-    }
-
-    const objectName = getBadgeObjectName(badge);
-    if (!objectName) {
-        return badge.url || null;
-    }
-
-    return storage.getDownloadUrl(BADGES_STORAGE_SCOPE, {
-        provider: getBadgeProvider(badge),
-        bucket: getBadgesBucket(),
-        objectName,
-    });
 };
 
 const createUserRecord = async ({ user_name, password, email, role = ROLES.USER, status = 0, osu_uid, avatar }) => {

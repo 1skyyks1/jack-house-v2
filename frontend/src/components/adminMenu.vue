@@ -15,7 +15,7 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { useStore } from "vuex";
-import { Odometer, Bell, User, ChatLineSquare, DocumentChecked, Postcard, Aim, Medal, Trophy } from "@element-plus/icons-vue"
+import { Odometer, Bell, User, ChatLineSquare, DocumentChecked, Aim, Medal, Trophy } from "@element-plus/icons-vue"
 import { hasAdminPermission } from "@/utils/permissions"
 
 const route = useRoute();
@@ -25,7 +25,6 @@ const store = useStore();
 const menuItems = [
   { index: 'dashboard', route: '/admin/dashboard', icon: Odometer, label: '仪表盘' },
   { index: 'announcement', route: '/admin/announcement', icon: Bell, label: '公告管理' },
-  { index: 'homeImgs', route: '/admin/homeImgs', icon: Postcard, label: '头图设置' },
   { index: 'users', route: '/admin/users', icon: User, label: '用户管理' },
   { index: 'posts', route: '/admin/posts', icon: ChatLineSquare, label: '帖子管理' },
   { index: 'postFiles', route: '/admin/postFiles', icon: DocumentChecked, label: '投稿审核' },
