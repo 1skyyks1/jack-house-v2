@@ -193,6 +193,12 @@ router.post('/:tid/qualifier/lock', authMiddleware(), isHost, qualifierControlle
 router.post('/:tid/qualifier/unlock', authMiddleware(), isHost, qualifierController.unlockQualifierRanking);
 
 // ========== 正赛管理路由 ==========
+// 图池统计计算状态
+router.get('/:tid/mappool-stats/manage', authMiddleware(), isHost, matchController.getMappoolStatsManage);
+
+// 手动计算并发布指定阶段图池统计
+router.post('/:tid/mappool-stats/:stage/calculate', authMiddleware(), isHost, matchController.calculateMappoolStats);
+
 // 创建轮次
 router.post('/:tid/round', authMiddleware(), isHost, matchController.createRound);
 

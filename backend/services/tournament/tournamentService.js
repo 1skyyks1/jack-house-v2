@@ -1,6 +1,6 @@
 const sequelize = require('../../config/db');
 const fs = require('fs');
-const { Tournament, TStaff, TRound } = require('../../models/tournament');
+const { Tournament, TStaff, TRound, TMappoolStats } = require('../../models/tournament');
 const User = require('../../models/user/user');
 const storage = require('../storage');
 const auditService = require('./auditService');
@@ -234,6 +234,7 @@ const deleteTournament = async (tid, operatorId) => {
             new_value: null,
             operator_id: operatorId
         }, { transaction });
+        await TMappoolStats.destroy({ where: { t_id: tid }, transaction });
         await tournament.destroy({ transaction });
     });
 };

@@ -5,6 +5,7 @@ const TTeam = require('./tTeam');
 const TPlayer = require('./tPlayer');
 const TRound = require('./tRound');
 const TMappool = require('./tMappool');
+const TMappoolStats = require('./tMappoolStats');
 const TMatch = require('./tMatch');
 const TMatchAction = require('./tMatchAction');
 const TGame = require('./tGame');
@@ -26,6 +27,7 @@ Tournament.hasMany(TQualMappool, { foreignKey: 't_id', as: 'qualMaps' });
 Tournament.hasMany(TQualImport, { foreignKey: 't_id', as: 'qualImports' });
 Tournament.hasMany(TSection, { foreignKey: 't_id', as: 'sections' });
 Tournament.hasMany(TAuditLog, { foreignKey: 't_id', as: 'auditLogs' });
+Tournament.hasMany(TMappoolStats, { foreignKey: 't_id', as: 'mappoolStats' });
 Tournament.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
 // TStaff 关联
@@ -51,6 +53,9 @@ TRound.hasMany(TMatch, { foreignKey: 'round_id', as: 'matches' });
 
 // TMappool 关联
 TMappool.belongsTo(TRound, { foreignKey: 'round_id', as: 'round' });
+
+// 已发布图池统计快照
+TMappoolStats.belongsTo(Tournament, { foreignKey: 't_id', as: 'tournament' });
 
 // TMatch 关联
 TMatch.belongsTo(TRound, { foreignKey: 'round_id', as: 'round' });
@@ -103,6 +108,7 @@ module.exports = {
     TPlayer,
     TRound,
     TMappool,
+    TMappoolStats,
     TMatch,
     TMatchAction,
     TGame,

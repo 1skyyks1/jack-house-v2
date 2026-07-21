@@ -3,10 +3,11 @@ const test = require('node:test');
 const { Op } = require('sequelize');
 
 const sequelize = require('../config/db');
-const { TAuditLog, Tournament, TGame, TMatch, TMatchAction, TPlayer, TQualImport, TQualMappool, TQualScore, TRound, TStaff, TTeam } = require('../models/tournament');
+const { TAuditLog, Tournament, TGame, TMatch, TMatchAction, TMappoolStats, TPlayer, TQualImport, TQualMappool, TQualScore, TRound, TStaff, TTeam } = require('../models/tournament');
 const User = require('../models/user/user');
 const auditService = require('../services/tournament/auditService');
 const bracketService = require('../services/tournament/bracketService');
+const mappoolStatsService = require('../services/tournament/mappoolStatsService');
 const osuMatchService = require('../services/tournament/osuMatchService');
 const qualifierService = require('../services/tournament/qualifierService');
 const refereeActionService = require('../services/tournament/refereeActionService');
@@ -310,67 +311,86 @@ test('score import uses the shared stage mappool and one transaction for all wri
     assert.equal(responseBody.winner, 'team1');
 });
 
-test('mappool stats group winner and loser rounds by stage and exclude FF/WBD matches', async (t) => {
-    const qfWinnerRound = { id: 3, name: 'QFWB', bracket_type: 0, order: 3 };
-    const qfLoserRound = { id: 4, name: 'QFLB-A', bracket_type: 1, order: null };
+test('mappool stats are manually snapshotted after effective stage matches finish', async (t) => {
+    const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+    const gfRound = { id: 3, name: 'Grand Finals', bracket_type: 2, order: 14 };
+    const resetRound = { id: 4, name: 'Grand Finals Reset', bracket_type: 3, order: 15 };
     const mapA = { id: 11, artist: 'artist a', map_id: 101, mapper: 'mapper a', title: 'title a', type: 'FU' };
     const mapB = { id: 12, artist: 'artist b', map_id: 102, mapper: 'mapper b', title: 'title b', type: 'DS' };
     const normalMatch = {
         id: 21,
-        actions: [
-            { action_type: 'protect', map: mapA },
-            { action_type: 'ban', map: mapB },
-            { action_type: 'pick', map: mapA }
-        ],
+        bracket_group: 'grand_final',
+        is_possible: 0,
         result_type: 'normal',
-        round: qfWinnerRound,
+        round: gfRound,
         status: 2
     };
-    const ffMatch = {
+    const inactiveReset = {
         id: 22,
-        actions: [
-            { action_type: 'ban', map: mapA },
-            { action_type: 'pick', map: mapB }
-        ],
-        result_type: 'ff',
-        round: qfLoserRound,
-        status: 2
+        bracket_group: 'reset_final',
+        is_possible: 1,
+        result_type: 'normal',
+        round: resetRound,
+        status: 0
     };
+    const actions = [
+        { action_type: 'protect', map: mapA },
+        { action_type: 'ban', map: mapB },
+        { action_type: 'pick', map: mapA }
+    ];
+    let createdSnapshot;
+    let auditAction;
 
-    patchMethod(t, TRound, 'findAll', async () => [qfWinnerRound, qfLoserRound]);
-    patchMethod(t, TMatch, 'findAll', async () => [normalMatch, ffMatch]);
+    patchMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
+    patchMethod(t, Tournament, 'findByPk', async () => ({ id: 1 }));
+    patchMethod(t, TRound, 'findAll', async () => [gfRound, resetRound]);
+    patchMethod(t, TMatch, 'findAll', async () => [normalMatch, inactiveReset]);
     patchMethod(t, roundStageService, 'listStageMappool', async () => ({ maps: [mapA, mapB] }));
+    patchMethod(t, TMatchAction, 'findAll', async () => actions);
+    patchMethod(t, TMappoolStats, 'findOne', async () => null);
+    patchMethod(t, TMappoolStats, 'create', async (values) => {
+        createdSnapshot = { id: 31, ...values };
+        return createdSnapshot;
+    });
+    patchMethod(t, auditService, 'writeAuditLog', async (payload) => {
+        auditAction = payload.action;
+    });
 
-    let responseBody;
-    const req = {
-        params: { tid: '1' },
-        t: (key) => key
-    };
-    const res = {
-        json(body) {
-            responseBody = body;
-            return this;
-        },
-        status() {
-            return this;
-        }
-    };
+    const result = await mappoolStatsService.calculate(1, 'gf', 7);
 
-    await matchController.getMappoolStats(req, res);
+    assert.equal(result.stage.key, 'gf');
+    assert.equal(result.stage.match_count, 1);
+    assert.equal(result.stage.completed_match_count, 1);
+    assert.equal(result.stage.valid_match_count, 1);
+    assert.equal(auditAction, 'calculate');
+    const snapshotMaps = JSON.parse(createdSnapshot.stats_json).maps;
+    assert.equal(snapshotMaps[0].protect_count, 1);
+    assert.equal(snapshotMaps[0].pick_count, 1);
+    assert.equal(snapshotMaps[0].protect_rate, 1);
+    assert.equal(snapshotMaps[1].ban_count, 1);
+    assert.equal(snapshotMaps[1].ban_rate, 1);
+});
 
-    assert.equal(responseBody.stages.length, 1);
-    const qfStage = responseBody.stages[0];
-    assert.equal(qfStage.key, 'qf');
-    assert.equal(qfStage.is_complete, true);
-    assert.equal(qfStage.match_count, 2);
-    assert.equal(qfStage.completed_match_count, 2);
-    assert.equal(qfStage.valid_match_count, 1);
-    assert.equal(qfStage.maps[0].protect_count, 1);
-    assert.equal(qfStage.maps[0].ban_count, 0);
-    assert.equal(qfStage.maps[0].pick_count, 1);
-    assert.equal(qfStage.maps[0].protect_rate, 1);
-    assert.equal(qfStage.maps[1].ban_count, 1);
-    assert.equal(qfStage.maps[1].ban_rate, 1);
+test('mappool stats reject calculation while an activated reset final is incomplete', async (t) => {
+    const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+    const gfRound = { id: 3, name: 'Grand Finals', bracket_type: 2, order: 14 };
+    const resetRound = { id: 4, name: 'Grand Finals Reset', bracket_type: 3, order: 15 };
+
+    patchMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
+    patchMethod(t, Tournament, 'findByPk', async () => ({ id: 1 }));
+    patchMethod(t, TRound, 'findAll', async () => [gfRound, resetRound]);
+    patchMethod(t, TMatch, 'findAll', async () => [
+        { id: 21, bracket_group: 'grand_final', is_possible: 0, result_type: 'normal', round: gfRound, status: 2 },
+        { id: 22, bracket_group: 'reset_final', is_possible: 0, result_type: 'normal', round: resetRound, status: 0 }
+    ]);
+    patchMethod(t, roundStageService, 'listStageMappool', async () => ({
+        maps: [{ id: 11, map_id: 101, type: 'FU' }]
+    }));
+
+    await assert.rejects(
+        mappoolStatsService.calculate(1, 'gf', 7),
+        (error) => error.status === 400 && error.message === '该阶段仍有未完成比赛'
+    );
 });
 
 test('referee action validation and audit share the locked match transaction', async (t) => {

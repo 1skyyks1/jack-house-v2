@@ -1,6 +1,6 @@
 const sequelize = require('../../config/db');
 const { Op } = require('sequelize');
-const { Tournament, TRound, TMappool, TMatch, TTeam, TPlayer, TGame } = require('../../models/tournament');
+const { Tournament, TRound, TMappool, TMappoolStats, TMatch, TTeam, TPlayer, TGame } = require('../../models/tournament');
 const auditService = require('./auditService');
 
 const TEAM_STATUS = {
@@ -408,9 +408,10 @@ const propagateMatchResult = async (matchId, operatorId, options = {}) => {
 };
 
 const clearExistingBracket = async (tid, transaction) => {
+    const statsCount = await TMappoolStats.destroy({ where: { t_id: tid }, transaction });
     const rounds = await TRound.findAll({ where: { t_id: tid }, transaction });
     const roundIds = rounds.map(round => round.id);
-    if (roundIds.length === 0) return { roundCount: 0, matchCount: 0 };
+    if (roundIds.length === 0) return { roundCount: 0, matchCount: 0, statsCount };
 
     const matches = await TMatch.findAll({ where: { round_id: roundIds }, transaction });
     const matchIds = matches.map(match => match.id);
@@ -420,7 +421,7 @@ const clearExistingBracket = async (tid, transaction) => {
     }
     await TMappool.destroy({ where: { round_id: roundIds }, transaction });
     await TRound.destroy({ where: { id: roundIds }, transaction });
-    return { roundCount: roundIds.length, matchCount: matchIds.length };
+    return { roundCount: roundIds.length, matchCount: matchIds.length, statsCount };
 };
 
 const generateDoubleEliminationBracket = async (tid, operatorId, options = {}) => {
