@@ -118,6 +118,7 @@ function getNextAction(match, actions) {
     const pickedActions = actions.filter(action => action.action_type === 'pick');
 
     if (!rollWinnerTeamId || !otherTeamId) return null;
+    if (pickedActions.some(action => String(action.map?.type || '').trim().toUpperCase() === 'TB')) return null;
     if (protectedCount === 0) return { actionType: 'Protect', teamId: rollWinnerTeamId };
     if (protectedCount === 1) return { actionType: 'Protect', teamId: otherTeamId };
     if (bannedCount === 0) return { actionType: 'Ban', teamId: otherTeamId };
@@ -414,6 +415,12 @@ exports.updateGameScore = async (req, res) => {
             }
 
             await match.save({ transaction });
+            if (match.status !== 2) {
+                await refereeActionService.ensureTiebreakerPick(match, req.user?.user_id, {
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                });
+            }
             if (match.status === 2 && match.winner_id) {
                 await bracketService.propagateMatchResult(match.id, req.user?.user_id, { transaction });
             }

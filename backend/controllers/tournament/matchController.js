@@ -8,6 +8,7 @@ const matchService = require('../../services/tournament/matchService');
 const mappoolStatsService = require('../../services/tournament/mappoolStatsService');
 const auditService = require('../../services/tournament/auditService');
 const osuMatchService = require('../../services/tournament/osuMatchService');
+const refereeActionService = require('../../services/tournament/refereeActionService');
 const roundStageService = require('../../services/tournament/roundStageService');
 const { translateMessage, translatePayload } = require('../../utils/tournamentI18n');
 
@@ -490,12 +491,22 @@ exports.fetchMatchScores = async (req, res) => {
                 throw error;
             }
 
-            const pickActions = await TMatchAction.findAll({
-                where: { match_id: match.id, action_type: 'pick' },
+            const matchActions = await TMatchAction.findAll({
+                where: { match_id: match.id },
                 order: [['sort_order', 'ASC'], ['id', 'ASC']],
                 transaction,
                 lock: transaction.LOCK.UPDATE
             });
+            const existingTiebreakerAction = await refereeActionService.ensureTiebreakerPick(lockedMatch, req.user?.user_id, {
+                actions: matchActions,
+                maps: stageMappool,
+                round: match.round,
+                transaction
+            });
+            if (existingTiebreakerAction && !matchActions.some(action => Number(action.id) === Number(existingTiebreakerAction.id))) {
+                matchActions.push(existingTiebreakerAction);
+            }
+            const pickActions = matchActions.filter(action => action.action_type === 'pick');
             const pickActionByMapId = new Map();
             for (const action of pickActions) {
                 const mapId = Number(action.map_id);
@@ -503,36 +514,35 @@ exports.fetchMatchScores = async (req, res) => {
                 pickActionByMapId.set(mapId, action);
             }
 
-            const latestPickedGameByMapId = new Map();
+            const latestGameByMapId = new Map();
             for (let i = 0; i < games.length; i++) {
                 const game = games[i].game;
                 const poolMap = mapIdToPool.get(osuMatchService.getGameBeatmapId(game));
                 if (!poolMap) continue;
-                const pickAction = pickActionByMapId.get(Number(poolMap.id));
-                if (!pickAction) continue;
-
-                latestPickedGameByMapId.set(Number(poolMap.id), {
+                latestGameByMapId.set(Number(poolMap.id), {
                     game,
                     poolMap,
-                    pickAction,
                     fallbackOrder: i + 1
                 });
+            }
+
+            const latestPickedGameByMapId = new Map();
+            for (const [mapId, pickedGame] of latestGameByMapId) {
+                const pickAction = pickActionByMapId.get(mapId);
+                if (!pickAction) continue;
+                latestPickedGameByMapId.set(mapId, { ...pickedGame, pickAction });
             }
 
             const pickedGames = Array.from(latestPickedGameByMapId.values())
                 .sort((a, b) => Number(a.pickAction.sort_order || a.fallbackOrder) - Number(b.pickAction.sort_order || b.fallbackOrder)
                     || Number(a.pickAction.id) - Number(b.pickAction.id));
-            if (pickedGames.length === 0) {
-                const error = new Error('未匹配到已选谱面的比赛成绩');
-                error.status = 400;
-                throw error;
-            }
             const gameRows = [];
             const gameMetadata = [];
+            const processedMapIds = new Set();
             let team1Total = 0;
             let team2Total = 0;
 
-            for (const pickedGame of pickedGames) {
+            const appendPickedGame = (pickedGame) => {
                 const { game, poolMap, pickAction, fallbackOrder } = pickedGame;
                 let p1Score = 0;
                 let p2Score = 0;
@@ -553,11 +563,12 @@ exports.fetchMatchScores = async (req, res) => {
                     }
                 }
 
-                if (p1Score === p2Score) continue;
+                if (p1Score === p2Score) return;
 
                 const winner = p1Score > p2Score ? 1 : 2;
                 if (winner === 1) team1Total++;
                 else team2Total++;
+                processedMapIds.add(Number(poolMap.id));
 
                 gameRows.push({
                     match_id: match.id,
@@ -578,10 +589,30 @@ exports.fetchMatchScores = async (req, res) => {
                     p2Score,
                     winner
                 });
+            };
+
+            for (const pickedGame of pickedGames) {
+                appendPickedGame(pickedGame);
+            }
+
+            const firstTo = roundStageService.getRoundFirstTo(match.round);
+            const automaticTiebreakerAction = await refereeActionService.ensureTiebreakerPick(lockedMatch, req.user?.user_id, {
+                actions: matchActions,
+                maps: stageMappool,
+                round: match.round,
+                team1Score: team1Total,
+                team2Score: team2Total,
+                transaction
+            });
+            if (automaticTiebreakerAction && !processedMapIds.has(Number(automaticTiebreakerAction.map_id))) {
+                const tiebreakerGame = latestGameByMapId.get(Number(automaticTiebreakerAction.map_id));
+                if (tiebreakerGame) {
+                    appendPickedGame({ ...tiebreakerGame, pickAction: automaticTiebreakerAction });
+                }
             }
 
             if (gameRows.length === 0) {
-                const error = new Error('未匹配到参赛选手成绩');
+                const error = new Error(pickedGames.length === 0 ? '未匹配到已选谱面的比赛成绩' : '未匹配到参赛选手成绩');
                 error.status = 400;
                 throw error;
             }
@@ -613,7 +644,6 @@ exports.fetchMatchScores = async (req, res) => {
 
             lockedMatch.team1_score = team1Total;
             lockedMatch.team2_score = team2Total;
-            const firstTo = roundStageService.getRoundFirstTo(match.round);
             if (team1Total >= firstTo) {
                 lockedMatch.winner_id = lockedMatch.team1_id;
                 lockedMatch.status = 2;

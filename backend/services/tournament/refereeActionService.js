@@ -10,6 +10,7 @@ const ACTION_TYPE_BY_LEGACY = {
 };
 
 const ACTION_TYPES = new Set(['protect', 'ban', 'pick']);
+const TIEBREAKER_TYPE = 'TB';
 
 const makeError = (message, status = 400) => {
     const error = new Error(message);
@@ -85,6 +86,16 @@ const ensureMap = async (match, mapId, options = {}) => {
         throw makeError('图不存在或不属于本轮次图池');
     }
     return map;
+};
+
+const isTiebreakerMap = (map) => String(map?.type || '').trim().toUpperCase() === TIEBREAKER_TYPE;
+
+const validateManualMapAction = (actionType, map) => {
+    if (!isTiebreakerMap(map)) return;
+    if (actionType === 'protect' || actionType === 'ban') {
+        throw makeError('决胜谱面不能被保护或禁用');
+    }
+    throw makeError('决胜谱面由系统自动选择');
 };
 
 const buildActionState = (actions, ignoredActionId = null) => {
@@ -166,6 +177,7 @@ const createAction = async (matchId, body, operatorId, tid = null) => {
         const actionType = normalizeActionType(body.action_type);
         const teamId = resolveTeamId(match, body);
         const map = await ensureMap(match, Number(body.map_id), { transaction });
+        validateManualMapAction(actionType, map);
         const actions = await TMatchAction.findAll({
             where: { match_id: matchId },
             order: [['sort_order', 'ASC'], ['id', 'ASC']],
@@ -203,6 +215,14 @@ const createAction = async (matchId, body, operatorId, tid = null) => {
             operator_id: operatorId
         }, { transaction });
 
+        if (actionType === 'pick') {
+            await ensureTiebreakerPick(match, operatorId, {
+                actions: [...actions, action],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+        }
+
         return action;
     });
 };
@@ -221,6 +241,9 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
         if (!action) {
             throw makeError('操作不存在', 404);
         }
+        if (parseValue(action).automatic === true) {
+            throw makeError('自动决胜谱面操作不能手动修改');
+        }
 
         const oldValue = auditService.pickModelValues(action);
         const actionType = body.action_type !== undefined ? normalizeActionType(body.action_type) : action.action_type;
@@ -229,6 +252,7 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
             : action.team_id;
         const mapId = body.map_id !== undefined ? Number(body.map_id) : action.map_id;
         const map = await ensureMap(match, mapId, { transaction });
+        validateManualMapAction(actionType, map);
 
         const actions = await TMatchAction.findAll({
             where: { match_id: matchId },
@@ -260,6 +284,60 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
 
         return action;
     });
+};
+
+const ensureTiebreakerPick = async (match, operatorId, options = {}) => {
+    const round = options.round || match?.round;
+    if (!match || !round) return null;
+
+    const firstTo = roundStageService.getRoundFirstTo(round);
+    if (firstTo <= 1) return null;
+    const team1Score = Number(options.team1Score ?? match.team1_score ?? 0);
+    const team2Score = Number(options.team2Score ?? match.team2_score ?? 0);
+    const maps = options.maps || (await roundStageService.listStageMappool(round.t_id, round.id, options)).maps;
+    const tiebreakerMap = maps.find(isTiebreakerMap);
+    if (!tiebreakerMap) return null;
+
+    const actions = options.actions || await TMatchAction.findAll({
+        where: { match_id: match.id },
+        order: [['sort_order', 'ASC'], ['id', 'ASC']],
+        transaction: options.transaction,
+        ...(options.lock ? { lock: options.lock } : {})
+    });
+    const existing = actions.find(action => action.action_type === 'pick' && Number(action.map_id) === Number(tiebreakerMap.id));
+    if (existing) return existing;
+
+    const mapById = new Map(maps.map(map => [Number(map.id), map]));
+    const regulationPickCount = actions.filter(action => action.action_type === 'pick'
+        && !isTiebreakerMap(mapById.get(Number(action.map_id)))).length;
+    const scoreReachedTiebreaker = team1Score === firstTo - 1 && team2Score === firstTo - 1;
+    const picksReachedTiebreaker = regulationPickCount >= (firstTo * 2 - 2);
+    if (!scoreReachedTiebreaker && !picksReachedTiebreaker) return null;
+
+    const sortOrder = actions.length > 0
+        ? Math.max(...actions.map(action => Number(action.sort_order) || 0)) + 1
+        : 1;
+    const action = await TMatchAction.create({
+        match_id: match.id,
+        action_type: 'pick',
+        team_id: null,
+        map_id: tiebreakerMap.id,
+        value_json: stringifyValue({ automatic: true, reason: 'tiebreaker' }),
+        sort_order: sortOrder,
+        created_by: operatorId || null
+    }, { transaction: options.transaction });
+
+    await auditService.writeAuditLog({
+        t_id: round.t_id,
+        entity_type: 'match_action',
+        entity_id: action.id,
+        action: 'auto_pick_tiebreaker',
+        old_value: null,
+        new_value: auditService.pickModelValues(action),
+        operator_id: operatorId
+    }, { transaction: options.transaction });
+
+    return action;
 };
 
 const buildUsedMaps = (actions, match = null) => {
@@ -296,6 +374,7 @@ const buildUsedMaps = (actions, match = null) => {
 module.exports = {
     buildUsedMaps,
     createAction,
+    ensureTiebreakerPick,
     listActions,
     updateAction
 };
