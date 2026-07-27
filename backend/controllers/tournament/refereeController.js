@@ -415,12 +415,6 @@ exports.updateGameScore = async (req, res) => {
             }
 
             await match.save({ transaction });
-            if (match.status !== 2) {
-                await refereeActionService.ensureTiebreakerPick(match, req.user?.user_id, {
-                    transaction,
-                    lock: transaction.LOCK.UPDATE
-                });
-            }
             if (match.status === 2 && match.winner_id) {
                 await bracketService.propagateMatchResult(match.id, req.user?.user_id, { transaction });
             }

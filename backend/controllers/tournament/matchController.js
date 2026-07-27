@@ -497,15 +497,6 @@ exports.fetchMatchScores = async (req, res) => {
                 transaction,
                 lock: transaction.LOCK.UPDATE
             });
-            const existingTiebreakerAction = await refereeActionService.ensureTiebreakerPick(lockedMatch, req.user?.user_id, {
-                actions: matchActions,
-                maps: stageMappool,
-                round: match.round,
-                transaction
-            });
-            if (existingTiebreakerAction && !matchActions.some(action => Number(action.id) === Number(existingTiebreakerAction.id))) {
-                matchActions.push(existingTiebreakerAction);
-            }
             const pickActions = matchActions.filter(action => action.action_type === 'pick');
             const pickActionByMapId = new Map();
             for (const action of pickActions) {
@@ -538,7 +529,6 @@ exports.fetchMatchScores = async (req, res) => {
                     || Number(a.pickAction.id) - Number(b.pickAction.id));
             const gameRows = [];
             const gameMetadata = [];
-            const processedMapIds = new Set();
             let team1Total = 0;
             let team2Total = 0;
 
@@ -568,8 +558,6 @@ exports.fetchMatchScores = async (req, res) => {
                 const winner = p1Score > p2Score ? 1 : 2;
                 if (winner === 1) team1Total++;
                 else team2Total++;
-                processedMapIds.add(Number(poolMap.id));
-
                 gameRows.push({
                     match_id: match.id,
                     map_id: poolMap.id,
@@ -596,21 +584,6 @@ exports.fetchMatchScores = async (req, res) => {
             }
 
             const firstTo = roundStageService.getRoundFirstTo(match.round);
-            const automaticTiebreakerAction = await refereeActionService.ensureTiebreakerPick(lockedMatch, req.user?.user_id, {
-                actions: matchActions,
-                maps: stageMappool,
-                round: match.round,
-                team1Score: team1Total,
-                team2Score: team2Total,
-                transaction
-            });
-            if (automaticTiebreakerAction && !processedMapIds.has(Number(automaticTiebreakerAction.map_id))) {
-                const tiebreakerGame = latestGameByMapId.get(Number(automaticTiebreakerAction.map_id));
-                if (tiebreakerGame) {
-                    appendPickedGame({ ...tiebreakerGame, pickAction: automaticTiebreakerAction });
-                }
-            }
-
             if (gameRows.length === 0) {
                 const error = new Error(pickedGames.length === 0 ? '未匹配到已选谱面的比赛成绩' : '未匹配到参赛选手成绩');
                 error.status = 400;

@@ -201,10 +201,11 @@ test('leaveTeam self-heals an orphan player record even after registration close
     assert.deepEqual(events, ['player', 'audit']);
 });
 
-test('score import uses the shared stage mappool and one transaction for all writes', async (t) => {
+test('score import uses the shared stage mappool and ignores unpicked MP games', async (t) => {
     const transaction = { LOCK: { UPDATE: 'UPDATE' } };
     const writes = [];
     const poolMap = { id: 11, map_id: 101, type: 'FU' };
+    const unpickedTiebreaker = { id: 12, map_id: 102, type: 'TB' };
     const round = {
         dataValues: { mappool: [] },
         first_to: 1,
@@ -246,10 +247,13 @@ test('score import uses the shared stage mappool and one transaction for all wri
         { user_id: 201, osu_uid: 1001 },
         { user_id: 202, osu_uid: 1002 }
     ]);
-    patchMethod(t, roundStageService, 'listStageMappool', async () => ({ maps: [poolMap], round }));
+    patchMethod(t, roundStageService, 'listStageMappool', async () => ({ maps: [poolMap, unpickedTiebreaker], round }));
     patchMethod(t, roundStageService, 'getRoundFirstTo', () => 1);
     patchMethod(t, osuMatchService, 'getCompleteMatch', async () => ({ events: [{}] }));
-    patchMethod(t, osuMatchService, 'getGameEvents', () => [{ game: { beatmapId: poolMap.map_id } }]);
+    patchMethod(t, osuMatchService, 'getGameEvents', () => [
+        { game: { beatmapId: poolMap.map_id } },
+        { game: { beatmapId: unpickedTiebreaker.map_id } }
+    ]);
     patchMethod(t, osuMatchService, 'getGameBeatmapId', (game) => game.beatmapId);
     patchMethod(t, osuMatchService, 'getGameScores', () => [
         { score: 900, userId: 1001 },
@@ -273,6 +277,7 @@ test('score import uses the shared stage mappool and one transaction for all wri
     });
     patchMethod(t, TGame, 'bulkCreate', async (rows, options) => {
         assert.equal(options.transaction, transaction);
+        assert.deepEqual(rows.map(row => row.map_id), [poolMap.id]);
         writes.push('create-games');
         return rows.map((row, index) => ({ id: index + 1, ...row }));
     });
@@ -432,7 +437,7 @@ test('referee action validation and audit share the locked match transaction', a
     assert.equal(result, action);
 });
 
-test('tiebreaker maps reject every manual referee action', async (t) => {
+test('tiebreaker maps cannot be protected, banned, or picked before regulation is complete', async (t) => {
     const transaction = { LOCK: { UPDATE: 'UPDATE' } };
     const match = { id: 5, round: { id: 3, t_id: 1 }, team1_id: 21, team2_id: 22 };
     const tiebreaker = { id: 11, type: 'TB' };
@@ -440,6 +445,8 @@ test('tiebreaker maps reject every manual referee action', async (t) => {
     patchMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
     patchMethod(t, TMatch, 'findByPk', async () => match);
     patchMethod(t, roundStageService, 'listStageMappool', async () => ({ maps: [tiebreaker] }));
+
+    patchMethod(t, TMatchAction, 'findAll', async () => []);
 
     for (const actionType of ['protect', 'ban', 'pick']) {
         await assert.rejects(
@@ -449,63 +456,51 @@ test('tiebreaker maps reject every manual referee action', async (t) => {
                 team_id: match.team1_id
             }, 7, 1),
             (error) => error.status === 400 && error.message === (actionType === 'pick'
-                ? '决胜谱面由系统自动选择'
+                ? '常规选图尚未完成，不能选择决胜谱面'
                 : '决胜谱面不能被保护或禁用')
         );
     }
 });
 
-test('tiebreaker pick is created automatically at deciding score', async (t) => {
-    const transaction = {};
-    const round = { bracket_type: 0, first_to: 5, id: 3, name: 'Winners RO32', order: 1, t_id: 1 };
-    const match = { id: 5, round, team1_score: 4, team2_score: 4 };
+test('after BO minus one picks, the referee can only pick the tiebreaker', async (t) => {
+    const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+    const round = { bracket_type: 0, first_to: 6, id: 3, name: 'Quarterfinals', order: 3, t_id: 1 };
+    const match = { id: 5, round, status: 1, team1_id: 21, team2_id: 22 };
+    const regulationMaps = Array.from({ length: 10 }, (_, index) => ({ id: index + 1, type: 'FU' }));
     const tiebreaker = { id: 11, type: 'TB' };
-    let createdValues;
-
-    patchMethod(t, TMatchAction, 'create', async (values, options) => {
-        assert.equal(options.transaction, transaction);
-        createdValues = values;
-        return { id: 9, ...values };
-    });
-    patchMethod(t, auditService, 'writeAuditLog', async (entry, options) => {
-        assert.equal(entry.action, 'auto_pick_tiebreaker');
-        assert.equal(options.transaction, transaction);
-    });
-
-    const action = await refereeActionService.ensureTiebreakerPick(match, 7, {
-        actions: [{ action_type: 'pick', id: 8, map_id: 10, sort_order: 4 }],
-        maps: [tiebreaker],
-        transaction
-    });
-
-    assert.equal(action.action_type, 'pick');
-    assert.equal(createdValues.map_id, tiebreaker.id);
-    assert.equal(createdValues.team_id, null);
-    assert.equal(createdValues.sort_order, 5);
-    assert.deepEqual(JSON.parse(createdValues.value_json), { automatic: true, reason: 'tiebreaker' });
-});
-
-test('tiebreaker pick is created after BO minus one regulation picks', async (t) => {
-    const round = { bracket_type: 0, first_to: 5, id: 3, name: 'Winners RO32', order: 1, t_id: 1 };
-    const match = { id: 5, round, team1_score: 0, team2_score: 0 };
-    const regulationMaps = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, type: 'FU' }));
-    const tiebreaker = { id: 9, type: 'TB' };
+    const extraRegulationMap = { id: 12, type: 'FU' };
+    const maps = [...regulationMaps, tiebreaker, extraRegulationMap];
     const actions = regulationMaps.map((map, index) => ({ action_type: 'pick', id: index + 1, map_id: map.id, sort_order: index + 1 }));
     let createdValues;
 
+    patchMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
+    patchMethod(t, TMatch, 'findByPk', async () => match);
+    patchMethod(t, roundStageService, 'listStageMappool', async () => ({ maps }));
+    patchMethod(t, TMatchAction, 'findAll', async () => actions);
     patchMethod(t, TMatchAction, 'create', async (values) => {
         createdValues = values;
-        return { id: 10, ...values };
+        return { id: 13, ...values };
     });
     patchMethod(t, auditService, 'writeAuditLog', async () => {});
 
-    await refereeActionService.ensureTiebreakerPick(match, 7, {
-        actions,
-        maps: [...regulationMaps, tiebreaker]
-    });
+    await assert.rejects(
+        refereeActionService.createAction(match.id, {
+            action_type: 'pick',
+            map_id: extraRegulationMap.id,
+            team_id: match.team1_id
+        }, 7, 1),
+        (error) => error.status === 400 && error.message === '常规选图已完成，只能选择决胜谱面'
+    );
 
-    assert.equal(createdValues.map_id, tiebreaker.id);
-    assert.equal(createdValues.sort_order, 9);
+    const action = await refereeActionService.createAction(match.id, {
+        action_type: 'pick',
+        map_id: tiebreaker.id,
+        team_id: match.team1_id
+    }, 7, 1);
+
+    assert.equal(action.map_id, tiebreaker.id);
+    assert.equal(action.team_id, match.team1_id);
+    assert.equal(JSON.parse(createdValues.value_json).automatic, undefined);
 });
 
 test('qualifier import bulk-writes scores, team MP, logs, and audit in one transaction', async (t) => {

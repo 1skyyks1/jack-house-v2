@@ -80,7 +80,7 @@ const resolveTeamId = (match, body) => {
 };
 
 const ensureMap = async (match, mapId, options = {}) => {
-    const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id, options);
+    const maps = options.maps || (await roundStageService.listStageMappool(match.round.t_id, match.round.id, options)).maps;
     const map = maps.find(item => Number(item.id) === Number(mapId)) || null;
     if (!map) {
         throw makeError('图不存在或不属于本轮次图池');
@@ -90,12 +90,34 @@ const ensureMap = async (match, mapId, options = {}) => {
 
 const isTiebreakerMap = (map) => String(map?.type || '').trim().toUpperCase() === TIEBREAKER_TYPE;
 
-const validateManualMapAction = (actionType, map) => {
-    if (!isTiebreakerMap(map)) return;
-    if (actionType === 'protect' || actionType === 'ban') {
+const validateManualMapAction = (match, actionType, map, actions, maps, ignoredActionId = null) => {
+    const isTiebreaker = isTiebreakerMap(map);
+    if (isTiebreaker && (actionType === 'protect' || actionType === 'ban')) {
         throw makeError('决胜谱面不能被保护或禁用');
     }
-    throw makeError('决胜谱面由系统自动选择');
+    if (actionType !== 'pick') return;
+
+    const mapById = new Map(maps.map(item => [Number(item.id), item]));
+    const otherActions = actions.filter(action => !ignoredActionId || Number(action.id) !== Number(ignoredActionId));
+    const regulationPickCount = otherActions.filter(action => action.action_type === 'pick'
+        && !isTiebreakerMap(mapById.get(Number(action.map_id)))).length;
+    const firstTo = roundStageService.getRoundFirstTo(match.round);
+    const regulationPickLimit = firstTo > 1 ? firstTo * 2 - 2 : 0;
+    const tiebreakerRequired = regulationPickLimit > 0 && regulationPickCount >= regulationPickLimit;
+
+    if (isTiebreaker && !tiebreakerRequired) {
+        throw makeError('常规选图尚未完成，不能选择决胜谱面');
+    }
+    if (!isTiebreaker && tiebreakerRequired) {
+        throw makeError('常规选图已完成，只能选择决胜谱面');
+    }
+
+    const resultingRegulationPickCount = regulationPickCount + (actionType === 'pick' && !isTiebreaker ? 1 : 0);
+    const resultingHasTiebreaker = (actionType === 'pick' && isTiebreaker)
+        || otherActions.some(action => action.action_type === 'pick' && isTiebreakerMap(mapById.get(Number(action.map_id))));
+    if (resultingHasTiebreaker && resultingRegulationPickCount < regulationPickLimit) {
+        throw makeError('常规选图尚未完成，不能选择决胜谱面');
+    }
 };
 
 const buildActionState = (actions, ignoredActionId = null) => {
@@ -176,14 +198,18 @@ const createAction = async (matchId, body, operatorId, tid = null) => {
         });
         const actionType = normalizeActionType(body.action_type);
         const teamId = resolveTeamId(match, body);
-        const map = await ensureMap(match, Number(body.map_id), { transaction });
-        validateManualMapAction(actionType, map);
+        if (actionType === 'pick' && (Number(match.status) === 2 || Boolean(match.winner_id))) {
+            throw makeError('比赛已结束，不能继续选图');
+        }
+        const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id, { transaction });
+        const map = await ensureMap(match, Number(body.map_id), { transaction, maps });
         const actions = await TMatchAction.findAll({
             where: { match_id: matchId },
             order: [['sort_order', 'ASC'], ['id', 'ASC']],
             transaction,
             lock: transaction.LOCK.UPDATE
         });
+        validateManualMapAction(match, actionType, map, actions, maps);
         const state = buildActionState(actions);
         validateActionConflict(state, actionType, teamId, map.id);
 
@@ -215,14 +241,6 @@ const createAction = async (matchId, body, operatorId, tid = null) => {
             operator_id: operatorId
         }, { transaction });
 
-        if (actionType === 'pick') {
-            await ensureTiebreakerPick(match, operatorId, {
-                actions: [...actions, action],
-                transaction,
-                lock: transaction.LOCK.UPDATE
-            });
-        }
-
         return action;
     });
 };
@@ -251,8 +269,8 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
             ? resolveTeamId(match, body)
             : action.team_id;
         const mapId = body.map_id !== undefined ? Number(body.map_id) : action.map_id;
-        const map = await ensureMap(match, mapId, { transaction });
-        validateManualMapAction(actionType, map);
+        const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id, { transaction });
+        const map = await ensureMap(match, mapId, { transaction, maps });
 
         const actions = await TMatchAction.findAll({
             where: { match_id: matchId },
@@ -260,6 +278,7 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
             transaction,
             lock: transaction.LOCK.UPDATE
         });
+        validateManualMapAction(match, actionType, map, actions, maps, action.id);
         const state = buildActionState(actions, action.id);
         validateActionConflict(state, actionType, teamId, map.id);
 
@@ -284,60 +303,6 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
 
         return action;
     });
-};
-
-const ensureTiebreakerPick = async (match, operatorId, options = {}) => {
-    const round = options.round || match?.round;
-    if (!match || !round) return null;
-
-    const firstTo = roundStageService.getRoundFirstTo(round);
-    if (firstTo <= 1) return null;
-    const team1Score = Number(options.team1Score ?? match.team1_score ?? 0);
-    const team2Score = Number(options.team2Score ?? match.team2_score ?? 0);
-    const maps = options.maps || (await roundStageService.listStageMappool(round.t_id, round.id, options)).maps;
-    const tiebreakerMap = maps.find(isTiebreakerMap);
-    if (!tiebreakerMap) return null;
-
-    const actions = options.actions || await TMatchAction.findAll({
-        where: { match_id: match.id },
-        order: [['sort_order', 'ASC'], ['id', 'ASC']],
-        transaction: options.transaction,
-        ...(options.lock ? { lock: options.lock } : {})
-    });
-    const existing = actions.find(action => action.action_type === 'pick' && Number(action.map_id) === Number(tiebreakerMap.id));
-    if (existing) return existing;
-
-    const mapById = new Map(maps.map(map => [Number(map.id), map]));
-    const regulationPickCount = actions.filter(action => action.action_type === 'pick'
-        && !isTiebreakerMap(mapById.get(Number(action.map_id)))).length;
-    const scoreReachedTiebreaker = team1Score === firstTo - 1 && team2Score === firstTo - 1;
-    const picksReachedTiebreaker = regulationPickCount >= (firstTo * 2 - 2);
-    if (!scoreReachedTiebreaker && !picksReachedTiebreaker) return null;
-
-    const sortOrder = actions.length > 0
-        ? Math.max(...actions.map(action => Number(action.sort_order) || 0)) + 1
-        : 1;
-    const action = await TMatchAction.create({
-        match_id: match.id,
-        action_type: 'pick',
-        team_id: null,
-        map_id: tiebreakerMap.id,
-        value_json: stringifyValue({ automatic: true, reason: 'tiebreaker' }),
-        sort_order: sortOrder,
-        created_by: operatorId || null
-    }, { transaction: options.transaction });
-
-    await auditService.writeAuditLog({
-        t_id: round.t_id,
-        entity_type: 'match_action',
-        entity_id: action.id,
-        action: 'auto_pick_tiebreaker',
-        old_value: null,
-        new_value: auditService.pickModelValues(action),
-        operator_id: operatorId
-    }, { transaction: options.transaction });
-
-    return action;
 };
 
 const buildUsedMaps = (actions, match = null) => {
@@ -374,7 +339,6 @@ const buildUsedMaps = (actions, match = null) => {
 module.exports = {
     buildUsedMaps,
     createAction,
-    ensureTiebreakerPick,
     listActions,
     updateAction
 };
