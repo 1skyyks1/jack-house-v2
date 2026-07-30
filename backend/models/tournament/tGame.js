@@ -7,6 +7,16 @@ const TGame = sequelize.define('TGame', {
         primaryKey: true,
         autoIncrement: true,
     },
+    mp_game_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: 'osu! multiplayer game id'
+    },
+    played_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'MP game 实际开始时间'
+    },
     match_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -36,10 +46,20 @@ const TGame = sequelize.define('TGame', {
         allowNull: false,
         comment: 'team1选手分数'
     },
+    player1_miss_count: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: true,
+        comment: 'team1选手实际 miss 数；NULL=未知'
+    },
     player2_score: {
         type: DataTypes.INTEGER,
         allowNull: false,
         comment: 'team2选手分数'
+    },
+    player2_miss_count: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: true,
+        comment: 'team2选手实际 miss 数；NULL=未知'
     },
     winner_team: {
         type: DataTypes.TINYINT,

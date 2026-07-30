@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 const { ROLES } = require("../../config/roles");
 const { getBadgeImageUrl } = require('../../services/badgeStorage');
+const tournamentRatingService = require('../../services/tournament/ratingService');
 
 const USER_SELF_UPDATE_FIELDS = ['password', 'qq', 'discord'];
 const ADMIN_UPDATE_FIELDS = ['user_name', 'password', 'email', 'role', 'status', 'osu_uid', 'avatar', 'qq', 'discord'];
@@ -169,6 +170,21 @@ const getUserById = async (req, res) => {
     }
 };
 
+const getUserTournamentExperiences = async (req, res) => {
+    try {
+        const requestedUserId = Number(req.params.user_id);
+        if (!Number.isInteger(requestedUserId) || requestedUserId <= 0) {
+            return res.status(400).json({ message: req.t('user.notFound') });
+        }
+        const user = await User.findByPk(requestedUserId, { attributes: ['user_id'] });
+        if (!user) return res.status(404).json({ message: req.t('user.notFound') });
+        const experiences = await tournamentRatingService.listPublishedForUser(requestedUserId);
+        return res.status(200).json({ data: experiences });
+    } catch (err) {
+        return res.status(500).json({ message: req.t('user.getFailed') });
+    }
+};
+
 // 更新用户
 const updateUser = async (req, res) => {
     const user_id = req.user.user_id;
@@ -245,6 +261,7 @@ module.exports = {
     getUsers,
     searchUsers,
     getUserById,
+    getUserTournamentExperiences,
     updateUser,
     deleteUser,
     getUserInfo,

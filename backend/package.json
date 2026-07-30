@@ -13,6 +13,9 @@
     "migrate:event-stage-backgrounds-to-github": "node scripts/migrate-event-stage-backgrounds-to-github.js",
     "migrate:ai-image-jobs": "node scripts/migrate-ai-image-jobs.js",
     "migrate:mappool-stats": "node scripts/migrate-mappool-stats.js",
+    "migrate:tournament-ratings": "node scripts/migrate-tournament-ratings.js",
+    "migrate:tournament-game-miss-count": "node scripts/migrate-tournament-game-miss-count.js",
+    "backfill:tournament-game-miss-count": "node scripts/backfill-tournament-game-miss-count.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "test": "node --test test/*.test.js"
   },

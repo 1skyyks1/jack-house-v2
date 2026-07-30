@@ -256,8 +256,8 @@ test('score import uses the shared stage mappool and ignores unpicked MP games',
     ]);
     patchMethod(t, osuMatchService, 'getGameBeatmapId', (game) => game.beatmapId);
     patchMethod(t, osuMatchService, 'getGameScores', () => [
-        { score: 900, userId: 1001 },
-        { score: 800, userId: 1002 }
+        { score: 900, statistics: { perfect: 100 }, userId: 1001 },
+        { score: 800, statistics: { miss: 2, perfect: 98 }, userId: 1002 }
     ]);
     patchMethod(t, osuMatchService, 'getScoreValue', (score) => score.score);
     patchMethod(t, osuMatchService, 'getScoreUserId', (score) => score.userId);
@@ -278,6 +278,8 @@ test('score import uses the shared stage mappool and ignores unpicked MP games',
     patchMethod(t, TGame, 'bulkCreate', async (rows, options) => {
         assert.equal(options.transaction, transaction);
         assert.deepEqual(rows.map(row => row.map_id), [poolMap.id]);
+        assert.equal(rows[0].player1_miss_count, 0);
+        assert.equal(rows[0].player2_miss_count, 2);
         writes.push('create-games');
         return rows.map((row, index) => ({ id: index + 1, ...row }));
     });

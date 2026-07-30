@@ -9,7 +9,9 @@ const createApi = async () => {
     return osu.API.createAsync(CLIENT_ID, CLIENT_SECRET);
 };
 
-const getCompleteMatch = async (mpId) => {
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+const getCompleteMatch = async (mpId, options = {}) => {
     const api = await createApi();
     let match = null;
     let after = undefined;
@@ -36,6 +38,7 @@ const getCompleteMatch = async (mpId) => {
         const latestEvent = response.events[response.events.length - 1];
         after = latestEvent?.id;
         if (!after) break;
+        if (Number(options.pageDelayMs) > 0) await sleep(Number(options.pageDelayMs));
     }
 
     if (!match) {
@@ -84,6 +87,22 @@ const getScoreUserId = (score) => {
     );
 };
 
+const getScoreStatistics = score => {
+    const candidates = [
+        score?.statistics,
+        score?.score?.statistics
+    ];
+    return candidates.find(candidate => candidate && typeof candidate === 'object') || null;
+};
+
+const getScoreMissCount = score => {
+    const statistics = getScoreStatistics(score);
+    if (!statistics) return null;
+    const value = statistics.miss ?? statistics.count_miss ?? statistics.countMiss ?? 0;
+    const normalized = Number(value);
+    return Number.isInteger(normalized) && normalized >= 0 ? normalized : null;
+};
+
 const getGameId = (game, event) => {
     return game?.id || game?.game_id || event?.id || null;
 };
@@ -98,6 +117,12 @@ const getGameScores = (game) => {
     return [];
 };
 
+const getGamePlayedAt = (game, event) => game?.start_time
+    || game?.startTime
+    || event?.timestamp
+    || event?.created_at
+    || null;
+
 const getGameEvents = (match) => {
     return Array.isArray(match?.events) ? match.events.filter(event => event?.game) : [];
 };
@@ -108,7 +133,10 @@ module.exports = {
     getGameBeatmapId,
     getGameEvents,
     getGameId,
+    getGamePlayedAt,
     getGameScores,
     getScoreUserId,
+    getScoreMissCount,
+    getScoreStatistics,
     getScoreValue
 };

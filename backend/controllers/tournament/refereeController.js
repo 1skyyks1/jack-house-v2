@@ -344,6 +344,19 @@ exports.updateGameScore = async (req, res) => {
         const { player1_id, player2_id } = req.body;
         const player1Score = Number(req.body.player1_score);
         const player2Score = Number(req.body.player2_score);
+        const parseMissCount = (value, field) => {
+            if (value === undefined) return undefined;
+            if (value === null || value === '') return null;
+            const normalized = Number(value);
+            if (!Number.isInteger(normalized) || normalized < 0) {
+                const error = new Error(`${field} 必须是非负整数或留空`);
+                error.status = 400;
+                throw error;
+            }
+            return normalized;
+        };
+        const player1MissCount = parseMissCount(req.body.player1_miss_count, 'player1_miss_count');
+        const player2MissCount = parseMissCount(req.body.player2_miss_count, 'player2_miss_count');
         if (!Number.isFinite(player1Score) || !Number.isFinite(player2Score) || player1Score < 0 || player2Score < 0) {
             return res.status(400).json({ message: req.t('tournament.errors.invalidScore') });
         }
@@ -376,10 +389,16 @@ exports.updateGameScore = async (req, res) => {
 
             const oldGameValue = auditService.pickModelValues(lockedGame);
             const oldMatchValue = auditService.pickModelValues(match, ['id', 'team1_score', 'team2_score', 'winner_id', 'status']);
+            const player1Changed = player1_id && Number(player1_id) !== Number(lockedGame.player1_id);
+            const player2Changed = player2_id && Number(player2_id) !== Number(lockedGame.player2_id);
             lockedGame.player1_id = player1_id || lockedGame.player1_id;
             lockedGame.player2_id = player2_id || lockedGame.player2_id;
             lockedGame.player1_score = Math.round(player1Score);
             lockedGame.player2_score = Math.round(player2Score);
+            if (player1MissCount !== undefined) lockedGame.player1_miss_count = player1MissCount;
+            else if (player1Changed) lockedGame.player1_miss_count = null;
+            if (player2MissCount !== undefined) lockedGame.player2_miss_count = player2MissCount;
+            else if (player2Changed) lockedGame.player2_miss_count = null;
             lockedGame.winner_team = player1Score > player2Score ? 1 : 2;
             await lockedGame.save({ transaction });
 

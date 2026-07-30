@@ -16,6 +16,9 @@ router.get('/info', checkAuth(), UserController.getUserInfo)
 // 搜索用户（用于赛事 staff 授权等登录后轻量选择，不返回管理字段）
 router.get('/search', checkAuth(), UserController.searchUsers);
 
+// 获取用户已发布的赛事经历与逐局表现
+router.get('/:user_id/tournaments', checkAuth.optional, UserController.getUserTournamentExperiences);
+
 // 获取单个用户
 router.get('/:user_id', checkAuth.optional, UserController.getUserById);
 

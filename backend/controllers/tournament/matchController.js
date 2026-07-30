@@ -6,6 +6,7 @@ const osu = require('osu-api-v2-js');
 const bracketService = require('../../services/tournament/bracketService');
 const matchService = require('../../services/tournament/matchService');
 const mappoolStatsService = require('../../services/tournament/mappoolStatsService');
+const ratingService = require('../../services/tournament/ratingService');
 const auditService = require('../../services/tournament/auditService');
 const osuMatchService = require('../../services/tournament/osuMatchService');
 const refereeActionService = require('../../services/tournament/refereeActionService');
@@ -169,8 +170,19 @@ exports.getBracket = async (req, res) => {
     }
 };
 
-// 获取正赛每轮次/每张图表现排行
+// 获取后台计算并发布的赛事评分与单局表现
 exports.getPerformance = async (req, res) => {
+    try {
+        const { tid } = req.params;
+        res.json(await ratingService.listPublished(tid));
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
+    }
+};
+
+// 获取原始成绩排行榜；与需要后台计算的 GPR/TPR 评分快照相互独立
+exports.getLeaderboard = async (req, res) => {
     try {
         const { tid } = req.params;
         const matches = await TMatch.findAll({
@@ -195,7 +207,6 @@ exports.getPerformance = async (req, res) => {
                 if (game.player2_id) playerIds.add(Number(game.player2_id));
             }
         }
-
         const players = playerIds.size > 0 ? await TPlayer.findAll({
             where: { id: Array.from(playerIds) },
             include: [{ model: User, as: 'user', attributes: ['user_id', 'user_name', 'avatar', 'osu_uid'] }]
@@ -203,30 +214,16 @@ exports.getPerformance = async (req, res) => {
         const playerById = new Map(players.map(player => [Number(player.id), player]));
         const stageMap = new Map();
 
-        const ensureStage = (stage) => {
+        const ensureStage = stage => {
             const key = stage || 'other';
-            if (!stageMap.has(key)) {
-                stageMap.set(key, {
-                    key,
-                    label: roundStageService.getStageLabel(stage),
-                    maps: new Map()
-                });
-            }
+            if (!stageMap.has(key)) stageMap.set(key, { key, label: roundStageService.getStageLabel(stage), maps: new Map() });
             return stageMap.get(key);
         };
-
         const ensureMap = (stageData, map) => {
             const key = map ? `${String(map.type || '').toUpperCase()}-${map.map_id || map.id}` : 'unknown';
-            if (!stageData.maps.has(key)) {
-                stageData.maps.set(key, {
-                    key,
-                    map: map ? auditService.pickModelValues(map) : null,
-                    entries: []
-                });
-            }
+            if (!stageData.maps.has(key)) stageData.maps.set(key, { key, map: map ? auditService.pickModelValues(map) : null, entries: [] });
             return stageData.maps.get(key);
         };
-
         const addEntry = ({ game, mapData, match, player, score, side, team }) => {
             if (!score || !team) return;
             mapData.entries.push({
@@ -256,43 +253,29 @@ exports.getPerformance = async (req, res) => {
             const stageData = ensureStage(stage);
             for (const game of match.games || []) {
                 const mapData = ensureMap(stageData, game.map);
-                addEntry({
-                    game,
-                    mapData,
-                    match,
-                    player: playerById.get(Number(game.player1_id)),
-                    score: Number(game.player1_score) || 0,
-                    side: 1,
-                    team: match.team1
-                });
-                addEntry({
-                    game,
-                    mapData,
-                    match,
-                    player: playerById.get(Number(game.player2_id)),
-                    score: Number(game.player2_score) || 0,
-                    side: 2,
-                    team: match.team2
-                });
+                addEntry({ game, mapData, match, player: playerById.get(Number(game.player1_id)), score: Number(game.player1_score) || 0, side: 1, team: match.team1 });
+                addEntry({ game, mapData, match, player: playerById.get(Number(game.player2_id)), score: Number(game.player2_score) || 0, side: 2, team: match.team2 });
             }
         }
 
         const stages = Array.from(stageMap.values())
-            .sort((a, b) => roundStageService.getStageSortIndex(a.key) - roundStageService.getStageSortIndex(b.key))
+            .sort((left, right) => roundStageService.getStageSortIndex(left.key) - roundStageService.getStageSortIndex(right.key))
             .map(stage => ({
                 key: stage.key,
                 label: stage.label,
                 maps: Array.from(stage.maps.values()).map(mapData => {
-                    const entries = mapData.entries.sort((a, b) => b.score - a.score);
+                    const entries = mapData.entries.sort((left, right) => right.score - left.score);
                     let lastScore = null;
                     let lastRank = 0;
-                    const rankedEntries = entries.map((entry, index) => {
-                        const rank = entry.score === lastScore ? lastRank : index + 1;
-                        lastScore = entry.score;
-                        lastRank = rank;
-                        return { ...entry, rank };
-                    });
-                    return { ...mapData, entries: rankedEntries };
+                    return {
+                        ...mapData,
+                        entries: entries.map((entry, index) => {
+                            const rank = entry.score === lastScore ? lastRank : index + 1;
+                            lastScore = entry.score;
+                            lastRank = rank;
+                            return { ...entry, rank };
+                        })
+                    };
                 }).filter(mapData => mapData.entries.length > 0)
             })).filter(stage => stage.maps.length > 0);
 
@@ -330,6 +313,45 @@ exports.calculateMappoolStats = async (req, res) => {
     try {
         const { tid, stage } = req.params;
         const result = await mappoolStatsService.calculate(tid, stage, req.user?.user_id);
+        res.json(translatePayload(req, result));
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
+    }
+};
+
+exports.getTournamentRatingsManage = async (req, res) => {
+    try {
+        res.json(await ratingService.listManage(req.params.tid));
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
+    }
+};
+
+exports.calculateTournamentRatings = async (req, res) => {
+    try {
+        const result = await ratingService.calculate(req.params.tid, req.user?.user_id);
+        res.json(translatePayload(req, result));
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
+    }
+};
+
+exports.finalizeTournamentRatings = async (req, res) => {
+    try {
+        const result = await ratingService.setFinal(req.params.tid, true, req.user?.user_id);
+        res.json(translatePayload(req, result));
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ message: error.status ? translateMessage(req, error.message) : req.t('common.serverError') });
+    }
+};
+
+exports.unlockTournamentRatings = async (req, res) => {
+    try {
+        const result = await ratingService.setFinal(req.params.tid, false, req.user?.user_id);
         res.json(translatePayload(req, result));
     } catch (error) {
         console.error(error);
@@ -511,6 +533,7 @@ exports.fetchMatchScores = async (req, res) => {
                 const poolMap = mapIdToPool.get(osuMatchService.getGameBeatmapId(game));
                 if (!poolMap) continue;
                 latestGameByMapId.set(Number(poolMap.id), {
+                    event: games[i],
                     game,
                     poolMap,
                     fallbackOrder: i + 1
@@ -533,9 +556,11 @@ exports.fetchMatchScores = async (req, res) => {
             let team2Total = 0;
 
             const appendPickedGame = (pickedGame) => {
-                const { game, poolMap, pickAction, fallbackOrder } = pickedGame;
+                const { event, game, poolMap, pickAction, fallbackOrder } = pickedGame;
                 let p1Score = 0;
                 let p2Score = 0;
+                let p1MissCount = null;
+                let p2MissCount = null;
                 let p1Id = null;
                 let p2Id = null;
 
@@ -546,9 +571,11 @@ exports.fetchMatchScores = async (req, res) => {
                     const team2Player = team2PlayerByOsuUid.get(scoreUserId);
                     if (team1Player) {
                         p1Score = scoreValue;
+                        p1MissCount = osuMatchService.getScoreMissCount(score);
                         p1Id = team1Player.id;
                     } else if (team2Player) {
                         p2Score = scoreValue;
+                        p2MissCount = osuMatchService.getScoreMissCount(score);
                         p2Id = team2Player.id;
                     }
                 }
@@ -560,12 +587,16 @@ exports.fetchMatchScores = async (req, res) => {
                 else team2Total++;
                 gameRows.push({
                     match_id: match.id,
+                    mp_game_id: osuMatchService.getGameId(game, event),
+                    played_at: osuMatchService.getGamePlayedAt(game, event),
                     map_id: poolMap.id,
                     order: pickAction.sort_order || fallbackOrder,
                     player1_id: p1Id || 0,
                     player2_id: p2Id || 0,
                     player1_score: p1Score,
+                    player1_miss_count: p1MissCount,
                     player2_score: p2Score,
+                    player2_miss_count: p2MissCount,
                     winner_team: winner,
                     action_type: 2,
                     action_by: Number(pickAction.team_id) === Number(match.team2_id) ? 2 : 1
@@ -574,7 +605,9 @@ exports.fetchMatchScores = async (req, res) => {
                     action_id: pickAction.id,
                     map: poolMap.type,
                     p1Score,
+                    p1MissCount,
                     p2Score,
+                    p2MissCount,
                     winner
                 });
             };
@@ -611,7 +644,9 @@ exports.fetchMatchScores = async (req, res) => {
                 map_id: savedGame.map_id,
                 map: gameMetadata[index].map,
                 p1Score: gameMetadata[index].p1Score,
+                p1MissCount: gameMetadata[index].p1MissCount,
                 p2Score: gameMetadata[index].p2Score,
+                p2MissCount: gameMetadata[index].p2MissCount,
                 winner: gameMetadata[index].winner
             }));
 

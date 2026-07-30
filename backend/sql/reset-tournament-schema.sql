@@ -199,13 +199,17 @@ CREATE TABLE `t_match_action` (
 
 CREATE TABLE `t_game` (
   `id` INT NOT NULL AUTO_INCREMENT,
+  `mp_game_id` BIGINT NULL COMMENT 'osu! multiplayer game id',
+  `played_at` DATETIME NULL COMMENT 'MP game 实际开始时间',
   `match_id` INT NOT NULL,
   `map_id` INT NOT NULL COMMENT '打的哪张图',
   `order` INT NOT NULL COMMENT '第几局',
   `player1_id` INT NOT NULL COMMENT 'team1上场选手',
   `player2_id` INT NOT NULL COMMENT 'team2上场选手',
   `player1_score` INT NOT NULL COMMENT 'team1选手分数',
+  `player1_miss_count` INT UNSIGNED NULL COMMENT 'team1选手实际 miss 数；NULL=未知',
   `player2_score` INT NOT NULL COMMENT 'team2选手分数',
+  `player2_miss_count` INT UNSIGNED NULL COMMENT 'team2选手实际 miss 数；NULL=未知',
   `winner_team` TINYINT NOT NULL COMMENT '1=红队胜 2=蓝队胜',
   `action_type` TINYINT NOT NULL COMMENT '0=protect 1=ban 2=pick',
   `action_by` TINYINT NOT NULL COMMENT '1=红队 2=蓝队',

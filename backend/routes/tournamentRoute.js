@@ -85,6 +85,9 @@ router.get('/:tid/bracket', matchController.getBracket);
 // 正赛表现
 router.get('/:tid/performance', matchController.getPerformance);
 
+// 原始成绩排行榜
+router.get('/:tid/leaderboard', matchController.getLeaderboard);
+
 router.get('/:tid/mappool-stats', matchController.getMappoolStats);
 
 // 轮次图池
@@ -193,6 +196,12 @@ router.post('/:tid/qualifier/lock', authMiddleware(), isHost, qualifierControlle
 router.post('/:tid/qualifier/unlock', authMiddleware(), isHost, qualifierController.unlockQualifierRanking);
 
 // ========== 正赛管理路由 ==========
+// 赛事评分计算状态与人工发布
+router.get('/:tid/ratings/manage', authMiddleware(), isHost, matchController.getTournamentRatingsManage);
+router.post('/:tid/ratings/calculate', authMiddleware(), isHost, matchController.calculateTournamentRatings);
+router.post('/:tid/ratings/finalize', authMiddleware(), isHost, matchController.finalizeTournamentRatings);
+router.post('/:tid/ratings/unlock', authMiddleware(), isHost, matchController.unlockTournamentRatings);
+
 // 图池统计计算状态
 router.get('/:tid/mappool-stats/manage', authMiddleware(), isHost, matchController.getMappoolStatsManage);
 

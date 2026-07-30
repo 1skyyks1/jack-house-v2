@@ -6,6 +6,9 @@ const TPlayer = require('./tPlayer');
 const TRound = require('./tRound');
 const TMappool = require('./tMappool');
 const TMappoolStats = require('./tMappoolStats');
+const TTournamentRatingSnapshot = require('./tTournamentRatingSnapshot');
+const TTournamentPlayerRating = require('./tTournamentPlayerRating');
+const TTournamentPlayPerformance = require('./tTournamentPlayPerformance');
 const TMatch = require('./tMatch');
 const TMatchAction = require('./tMatchAction');
 const TGame = require('./tGame');
@@ -28,6 +31,9 @@ Tournament.hasMany(TQualImport, { foreignKey: 't_id', as: 'qualImports' });
 Tournament.hasMany(TSection, { foreignKey: 't_id', as: 'sections' });
 Tournament.hasMany(TAuditLog, { foreignKey: 't_id', as: 'auditLogs' });
 Tournament.hasMany(TMappoolStats, { foreignKey: 't_id', as: 'mappoolStats' });
+Tournament.hasOne(TTournamentRatingSnapshot, { foreignKey: 't_id', as: 'ratingSnapshot' });
+Tournament.hasMany(TTournamentPlayerRating, { foreignKey: 't_id', as: 'playerRatings' });
+Tournament.hasMany(TTournamentPlayPerformance, { foreignKey: 't_id', as: 'playPerformances' });
 Tournament.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
 // TStaff 关联
@@ -56,6 +62,18 @@ TMappool.belongsTo(TRound, { foreignKey: 'round_id', as: 'round' });
 
 // 已发布图池统计快照
 TMappoolStats.belongsTo(Tournament, { foreignKey: 't_id', as: 'tournament' });
+
+// 赛事评分快照
+TTournamentRatingSnapshot.belongsTo(Tournament, { foreignKey: 't_id', as: 'tournament' });
+TTournamentRatingSnapshot.hasMany(TTournamentPlayerRating, { foreignKey: 'snapshot_id', as: 'playerRatings' });
+TTournamentRatingSnapshot.hasMany(TTournamentPlayPerformance, { foreignKey: 'snapshot_id', as: 'playPerformances' });
+TTournamentPlayerRating.belongsTo(TTournamentRatingSnapshot, { foreignKey: 'snapshot_id', as: 'snapshot' });
+TTournamentPlayerRating.belongsTo(TPlayer, { foreignKey: 'player_id', as: 'player' });
+TTournamentPlayerRating.belongsTo(TTeam, { foreignKey: 'team_id', as: 'team' });
+TTournamentPlayPerformance.belongsTo(TTournamentRatingSnapshot, { foreignKey: 'snapshot_id', as: 'snapshot' });
+TTournamentPlayPerformance.belongsTo(TGame, { foreignKey: 'game_id', as: 'game' });
+TTournamentPlayPerformance.belongsTo(TPlayer, { foreignKey: 'player_id', as: 'player' });
+TTournamentPlayPerformance.belongsTo(TPlayer, { foreignKey: 'opponent_player_id', as: 'opponent' });
 
 // TMatch 关联
 TMatch.belongsTo(TRound, { foreignKey: 'round_id', as: 'round' });
@@ -109,6 +127,9 @@ module.exports = {
     TRound,
     TMappool,
     TMappoolStats,
+    TTournamentRatingSnapshot,
+    TTournamentPlayerRating,
+    TTournamentPlayPerformance,
     TMatch,
     TMatchAction,
     TGame,
