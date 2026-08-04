@@ -19,7 +19,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cors = require('cors');
 const mariadb = require('mariadb');
-const { createAnalyticsRouter } = require('@jack-house-analytics/server-express');
+const { createAnalyticsRouter, MariaDbAnalyticsStorage } = require('@jack-house-analytics/server-express');
 const i18next = require('i18next');
 const Backend = require('i18next-fs-backend');
 const i18nextMiddleware = require('i18next-http-middleware');
@@ -55,6 +55,8 @@ const corsOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '')
 const isProduction = process.env.NODE_ENV === 'production';
 const allowLocalhostCors = !isProduction && process.env.CORS_ALLOW_LOCALHOST !== 'false';
 const analyticsEnabled = process.env.ANALYTICS_ENABLED !== 'false';
+const analyticsRetentionDays = parsePositiveInteger(process.env.ANALYTICS_RETENTION_DAYS, 14);
+const analyticsCleanupIntervalMs = 6 * 60 * 60 * 1000;
 
 if (isProduction && corsOrigins.length === 0) {
     throw new Error('CORS_ORIGIN or FRONTEND_URL must be set in production when credentials are enabled');
@@ -115,6 +117,10 @@ const osuLimiter = rateLimit({
 })
 
 if (analyticsEnabled) {
+    const analyticsApps = (process.env.ANALYTICS_APPS || 'jack-house-v3')
+        .split(',')
+        .map((appId) => appId.trim())
+        .filter(Boolean);
     const analyticsPool = mariadb.createPool({
         host: process.env.ANALYTICS_DB_HOST || process.env.DB_HOST,
         database: process.env.ANALYTICS_DB_NAME || process.env.DB_NAME,
@@ -122,15 +128,140 @@ if (analyticsEnabled) {
         password: process.env.ANALYTICS_DB_PASSWORD ?? process.env.DB_PASSWORD,
         connectionLimit: Number(process.env.ANALYTICS_DB_CONNECTION_LIMIT || 5),
     });
+    const analyticsStorage = new MariaDbAnalyticsStorage(analyticsPool);
+    const pageViewAnalyticsStorage = {
+        insertEvents: (events) => analyticsStorage.insertEvents(
+            events.filter((event) => event.eventType === 'page_start'),
+        ),
+    };
 
     app.use('/analytics', commonLimiter, createAnalyticsRouter({
         express,
         mariaDbPool: analyticsPool,
-        apps: (process.env.ANALYTICS_APPS || 'jack-house-v3').split(',').map((appId) => appId.trim()).filter(Boolean),
+        storage: pageViewAnalyticsStorage,
+        apps: analyticsApps,
         allowedOrigins: getAnalyticsAllowedOrigins(),
         autoMigrate: process.env.ANALYTICS_AUTO_MIGRATE === 'true' || (!isProduction && process.env.ANALYTICS_AUTO_MIGRATE !== 'false'),
         enableStats: process.env.ANALYTICS_ENABLE_STATS !== 'false',
     }));
+
+    app.get('/analytics/stats/audience', async (request, response) => {
+        const appId = typeof request.query.appId === 'string' ? request.query.appId : analyticsApps[0];
+        if (!analyticsApps.includes(appId)) {
+            return response.status(400).json({ ok: false, code: 'INVALID_APP_ID' });
+        }
+
+        const cutoff = getUtcRetentionCutoff(analyticsRetentionDays);
+
+        try {
+            const timezoneRows = await analyticsPool.query(
+                `SELECT timezone, COUNT(*) AS visitors
+                 FROM (
+                     SELECT visitor_id,
+                            JSON_UNQUOTE(JSON_EXTRACT(payload, '$.context.timezone')) AS timezone,
+                            ROW_NUMBER() OVER (PARTITION BY visitor_id ORDER BY event_time DESC, id DESC) AS context_rank
+                     FROM analytics_events
+                     WHERE app_id = ? AND event_type = 'page_start' AND event_time >= ?
+                 ) AS latest_context
+                 WHERE context_rank = 1 AND timezone IS NOT NULL AND timezone <> ''
+                 GROUP BY timezone
+                 ORDER BY visitors DESC`,
+                [appId, cutoff],
+            );
+            const deviceRows = await analyticsPool.query(
+                `SELECT device, COUNT(*) AS visitors
+                 FROM (
+                     SELECT visitor_id,
+                            CASE
+                                WHEN JSON_EXTRACT(payload, '$.context.viewport.width') IS NULL THEN 'unknown'
+                                WHEN CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.context.viewport.width')) AS UNSIGNED) < 768 THEN 'mobile'
+                                WHEN CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.context.viewport.width')) AS UNSIGNED) < 1200 THEN 'tablet'
+                                ELSE 'desktop'
+                            END AS device,
+                            ROW_NUMBER() OVER (PARTITION BY visitor_id ORDER BY event_time DESC, id DESC) AS context_rank
+                     FROM analytics_events
+                     WHERE app_id = ? AND event_type = 'page_start' AND event_time >= ?
+                 ) AS latest_context
+                 WHERE context_rank = 1
+                 GROUP BY device
+                 ORDER BY visitors DESC`,
+                [appId, cutoff],
+            );
+            const screenRows = await analyticsPool.query(
+                `SELECT screen_width, screen_height, COUNT(*) AS visitors
+                 FROM (
+                     SELECT visitor_id,
+                            CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.context.screen.width')) AS UNSIGNED) AS screen_width,
+                            CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.context.screen.height')) AS UNSIGNED) AS screen_height,
+                            ROW_NUMBER() OVER (PARTITION BY visitor_id ORDER BY event_time DESC, id DESC) AS context_rank
+                     FROM analytics_events
+                     WHERE app_id = ? AND event_type = 'page_start' AND event_time >= ?
+                 ) AS latest_context
+                 WHERE context_rank = 1 AND screen_width > 0 AND screen_height > 0
+                 GROUP BY screen_width, screen_height
+                 ORDER BY visitors DESC
+                 LIMIT 8`,
+                [appId, cutoff],
+            );
+
+            return response.status(200).json({
+                ok: true,
+                appId,
+                days: analyticsRetentionDays,
+                timezones: timezoneRows.map((row) => ({
+                    timezone: row.timezone,
+                    visitors: Number(row.visitors || 0),
+                })),
+                devices: deviceRows.map((row) => ({
+                    device: row.device,
+                    visitors: Number(row.visitors || 0),
+                })),
+                screens: screenRows.map((row) => ({
+                    width: Number(row.screen_width),
+                    height: Number(row.screen_height),
+                    visitors: Number(row.visitors || 0),
+                })),
+            });
+        } catch (error) {
+            console.error('Failed to query analytics audience:', error);
+            return response.status(500).json({ ok: false, code: 'INTERNAL_ERROR' });
+        }
+    });
+
+    const cleanupAnalyticsEvents = async () => {
+        const cutoff = getUtcRetentionCutoff(analyticsRetentionDays);
+        const result = await analyticsPool.query(
+            'DELETE FROM analytics_events WHERE event_time < ?',
+            [cutoff],
+        );
+
+        if (result.affectedRows > 0) {
+            console.log(`Deleted ${result.affectedRows} analytics events older than ${cutoff}`);
+        }
+    };
+
+    void cleanupAnalyticsEvents().catch((error) => {
+        console.error('Failed to clean up expired analytics events:', error);
+    });
+
+    const analyticsCleanupTimer = setInterval(() => {
+        void cleanupAnalyticsEvents().catch((error) => {
+            console.error('Failed to clean up expired analytics events:', error);
+        });
+    }, analyticsCleanupIntervalMs);
+    analyticsCleanupTimer.unref();
+}
+
+function parsePositiveInteger(value, fallback) {
+    const parsed = Number.parseInt(value ?? '', 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getUtcRetentionCutoff(retentionDays) {
+    const cutoff = new Date();
+    cutoff.setUTCHours(0, 0, 0, 0);
+    cutoff.setUTCDate(cutoff.getUTCDate() - (retentionDays - 1));
+    return cutoff.toISOString().slice(0, 19).replace('T', ' ');
 }
 
 // 解析 JSON 请求体

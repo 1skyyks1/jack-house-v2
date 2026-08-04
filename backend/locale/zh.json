@@ -27,6 +27,17 @@
     "noPermission": "权限不足，无法删除",
     "deleteFailed": "删除评论失败"
   },
+  "packFeedback": {
+    "invalid": "请选择问题类型，并填写 5 到 2000 字的说明",
+    "duplicate": "你已提交过同类型反馈，我们正在处理中",
+    "createSuccess": "反馈已提交",
+    "createFailed": "反馈提交失败，请稍后再试",
+    "invalidStatus": "无效的反馈状态",
+    "notFound": "反馈不存在",
+    "getFailed": "获取反馈列表失败",
+    "updateSuccess": "反馈状态已更新",
+    "updateFailed": "更新反馈状态失败"
+  },
   "pack": {
     "createMissing": "图包名和标签是必填项",
     "createFailed": "创建失败",
