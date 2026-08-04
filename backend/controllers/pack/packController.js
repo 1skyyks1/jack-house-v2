@@ -1,4 +1,4 @@
-const { Pack, Tag, User, PackMap, PackComment } = require('../../models');
+const { Pack, Tag, User, PackMap, PackComment, PackFeedback } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 
@@ -160,6 +160,7 @@ exports.deletePack = async (req, res) => {
         await pack.setTags([], { transaction: t });
         await PackMap.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
         await PackComment.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
+        await PackFeedback.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
         await pack.destroy({ transaction: t });
 
         await t.commit();
