@@ -198,8 +198,8 @@ const createAction = async (matchId, body, operatorId, tid = null) => {
         });
         const actionType = normalizeActionType(body.action_type);
         const teamId = resolveTeamId(match, body);
-        if (actionType === 'pick' && (Number(match.status) === 2 || Boolean(match.winner_id))) {
-            throw makeError('比赛已结束，不能继续选图');
+        if (Number(match.status) === 2 || Boolean(match.winner_id)) {
+            throw makeError('比赛已结束，不能继续记录裁判操作');
         }
         const { maps } = await roundStageService.listStageMappool(match.round.t_id, match.round.id, { transaction });
         const map = await ensureMap(match, Number(body.map_id), { transaction, maps });
@@ -212,6 +212,11 @@ const createAction = async (matchId, body, operatorId, tid = null) => {
         validateManualMapAction(match, actionType, map, actions, maps);
         const state = buildActionState(actions);
         validateActionConflict(state, actionType, teamId, map.id);
+
+        if (Number(match.status) === 0) {
+            match.status = 1;
+            await match.save({ transaction });
+        }
 
         const sortOrder = actions.length > 0
             ? Math.max(...actions.map(action => action.sort_order || 0)) + 1
@@ -281,6 +286,11 @@ const updateAction = async (matchId, actionId, body, operatorId, tid = null) => 
         validateManualMapAction(match, actionType, map, actions, maps, action.id);
         const state = buildActionState(actions, action.id);
         validateActionConflict(state, actionType, teamId, map.id);
+
+        if (Number(match.status) === 0) {
+            match.status = 1;
+            await match.save({ transaction });
+        }
 
         action.action_type = actionType;
         action.team_id = teamId;

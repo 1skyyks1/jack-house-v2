@@ -17,6 +17,7 @@
     "migrate:tournament-ratings": "node scripts/migrate-tournament-ratings.js",
     "migrate:tournament-game-miss-count": "node scripts/migrate-tournament-game-miss-count.js",
     "backfill:tournament-game-miss-count": "node scripts/backfill-tournament-game-miss-count.js",
+    "backfill:tournament-status": "node scripts/backfill-tournament-status.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "test": "node --test test/*.test.js"
   },

@@ -322,6 +322,15 @@ const ensureWinnerBelongsToMatch = (match, winnerId) => {
     }
 };
 
+const hasOperationalMatchData = (match) => Boolean(
+    match.mp_id
+    || match.roll_winner_id
+    || match.team1_timeout_used
+    || match.team2_timeout_used
+    || Number(match.team1_score) > 0
+    || Number(match.team2_score) > 0
+);
+
 const updateMatch = async (tid, matchId, body, operatorId) => {
     return sequelize.transaction(async (transaction) => {
         const match = await ensureMatchInTournament(tid, matchId, {
@@ -363,6 +372,9 @@ const updateMatch = async (tid, matchId, body, operatorId) => {
                 match.team2_score = firstTo;
             }
             match.status = 2;
+        }
+        if (Number(match.status) !== 2 && hasOperationalMatchData(match)) {
+            match.status = 1;
         }
 
         await match.save({ transaction });

@@ -658,6 +658,9 @@ exports.fetchMatchScores = async (req, res) => {
             } else if (team2Total >= firstTo) {
                 lockedMatch.winner_id = lockedMatch.team2_id;
                 lockedMatch.status = 2;
+            } else {
+                lockedMatch.winner_id = null;
+                lockedMatch.status = 1;
             }
             await lockedMatch.save({ transaction });
 

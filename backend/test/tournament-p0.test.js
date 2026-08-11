@@ -7,6 +7,7 @@ const { TAuditLog, Tournament, TGame, TMatch, TMatchAction, TMappoolStats, TPlay
 const User = require('../models/user/user');
 const auditService = require('../services/tournament/auditService');
 const bracketService = require('../services/tournament/bracketService');
+const lifecycleService = require('../services/tournament/lifecycleService');
 const mappoolStatsService = require('../services/tournament/mappoolStatsService');
 const osuMatchService = require('../services/tournament/osuMatchService');
 const qualifierService = require('../services/tournament/qualifierService');
@@ -400,9 +401,20 @@ test('mappool stats reject calculation while an activated reset final is incompl
     );
 });
 
-test('referee action validation and audit share the locked match transaction', async (t) => {
+test('first referee action marks the locked match in progress and audits in the same transaction', async (t) => {
     const transaction = { LOCK: { UPDATE: 'UPDATE' } };
-    const match = { id: 5, round: { id: 3, t_id: 1 }, team1_id: 21, team2_id: 22 };
+    let matchSaved = false;
+    const match = {
+        id: 5,
+        round: { id: 3, t_id: 1 },
+        status: 0,
+        team1_id: 21,
+        team2_id: 22,
+        save: async (options) => {
+            assert.equal(options.transaction, transaction);
+            matchSaved = true;
+        }
+    };
     const map = { id: 11 };
     const action = { id: 9, action_type: 'pick', map_id: map.id, match_id: match.id, sort_order: 1, team_id: match.team1_id };
 
@@ -437,6 +449,86 @@ test('referee action validation and audit share the locked match transaction', a
     }, 7, 1);
 
     assert.equal(result, action);
+    assert.equal(match.status, 1);
+    assert.equal(matchSaved, true);
+});
+
+test('winner-bracket side winning grand final completes the tournament', async (t) => {
+    const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+    const tournament = {
+        id: 1,
+        status: 3,
+        save: async (options) => assert.equal(options.transaction, transaction)
+    };
+    let auditEntry;
+
+    patchMethod(t, Tournament, 'findByPk', async (_id, options) => {
+        assert.equal(options.transaction, transaction);
+        assert.equal(options.lock, transaction.LOCK.UPDATE);
+        return tournament;
+    });
+    patchMethod(t, auditService, 'writeAuditLog', async (entry, options) => {
+        auditEntry = entry;
+        assert.equal(options.transaction, transaction);
+    });
+
+    const completed = await lifecycleService.completeFromMatch({
+        bracket_group: 'grand_final',
+        round: { t_id: 1 },
+        status: 2,
+        team1_id: 21,
+        team2_id: 22,
+        winner_id: 21
+    }, 7, { transaction });
+
+    assert.equal(completed, true);
+    assert.equal(tournament.status, 4);
+    assert.equal(auditEntry.action, 'status_transition');
+    assert.deepEqual(auditEntry.new_value, { status: 4 });
+});
+
+test('loser-bracket side winning grand final waits for reset final', async (t) => {
+    let tournamentRead = false;
+    patchMethod(t, Tournament, 'findByPk', async () => {
+        tournamentRead = true;
+        return null;
+    });
+
+    const completed = await lifecycleService.completeFromMatch({
+        bracket_group: 'grand_final',
+        round: { t_id: 1 },
+        status: 2,
+        team1_id: 21,
+        team2_id: 22,
+        winner_id: 22
+    }, 7, { transaction: { LOCK: { UPDATE: 'UPDATE' } } });
+
+    assert.equal(completed, false);
+    assert.equal(tournamentRead, false);
+});
+
+test('completed reset final completes the tournament regardless of winner side', async (t) => {
+    const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+    const tournament = {
+        id: 1,
+        status: 3,
+        save: async (options) => assert.equal(options.transaction, transaction)
+    };
+
+    patchMethod(t, Tournament, 'findByPk', async () => tournament);
+    patchMethod(t, auditService, 'writeAuditLog', async () => {});
+
+    const completed = await lifecycleService.completeFromMatch({
+        bracket_group: 'reset_final',
+        round: { t_id: 1 },
+        status: 2,
+        team1_id: 21,
+        team2_id: 22,
+        winner_id: 22
+    }, 7, { transaction });
+
+    assert.equal(completed, true);
+    assert.equal(tournament.status, 4);
 });
 
 test('tiebreaker maps cannot be protected, banned, or picked before regulation is complete', async (t) => {

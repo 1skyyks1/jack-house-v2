@@ -218,6 +218,11 @@ exports.recordRoll = async (req, res) => {
                 error.status = 404;
                 throw error;
             }
+            if (Number(match.status) === 2) {
+                const error = new Error('比赛已结束，不能修改 Roll 胜方');
+                error.status = 409;
+                throw error;
+            }
 
             const winnerTeamId = Number(winner_team_id);
             if (winnerTeamId !== Number(match.team1_id) && winnerTeamId !== Number(match.team2_id)) {
@@ -315,6 +320,8 @@ exports.recordTimeout = async (req, res) => {
                 }
                 match.team2_timeout_used = 1;
             }
+
+            if (Number(match.status) === 0) match.status = 1;
 
             await match.save({ transaction });
             await auditService.writeAuditLog({
@@ -430,7 +437,7 @@ exports.updateGameScore = async (req, res) => {
                     throw error;
                 }
                 match.winner_id = null;
-                match.status = match.roll_winner_id ? 1 : 0;
+                match.status = 1;
             }
 
             await match.save({ transaction });

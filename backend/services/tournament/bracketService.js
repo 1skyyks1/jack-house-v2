@@ -2,6 +2,7 @@ const sequelize = require('../../config/db');
 const { Op } = require('sequelize');
 const { Tournament, TRound, TMappool, TMappoolStats, TMatch, TTeam, TPlayer, TGame } = require('../../models/tournament');
 const auditService = require('./auditService');
+const lifecycleService = require('./lifecycleService');
 
 const TEAM_STATUS = {
     APPROVED: 1
@@ -398,6 +399,8 @@ const propagateMatchResult = async (matchId, operatorId, options = {}) => {
             }, { transaction });
         }
 
+        await lifecycleService.completeFromMatch(sourceMatch, operatorId, { transaction });
+
         return { updated: targets.length, targets };
     };
 
@@ -446,6 +449,7 @@ const generateDoubleEliminationBracket = async (tid, operatorId, options = {}) =
         const winnerRounds = await createWinnerBracket(roundByKey, teams, transaction);
         const loserRounds = await createLoserBracket(roundByKey, winnerRounds, transaction);
         const finals = await createFinals(roundByKey, winnerRounds, loserRounds, transaction);
+        await lifecycleService.markMainStage(tid, operatorId, { transaction });
 
         const rounds = await TRound.findAll({
             where: { t_id: tid },
