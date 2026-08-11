@@ -1,6 +1,15 @@
 const { Pack, PackFeedback, User } = require('../../models');
 
-const CATEGORIES = new Set(['incorrect_info', 'broken_link', 'inappropriate', 'duplicate', 'other']);
+const CATEGORIES = new Set([
+    'incorrect_tag',
+    'duplicate',
+    'copyright_or_violation',
+    'other',
+    // Keep accepting legacy values during rolling deployments.
+    'incorrect_info',
+    'broken_link',
+    'inappropriate',
+]);
 
 exports.createFeedback = async (req, res) => {
     const packId = Number(req.params.pack_id);
