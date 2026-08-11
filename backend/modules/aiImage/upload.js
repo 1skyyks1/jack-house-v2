@@ -27,7 +27,7 @@ const upload = multer({
     storage,
     limits: {
         fileSize: parseFileSize(process.env.AI_IMAGE_MAX_FILE_SIZE_MB, 20),
-        files: 11,
+        files: 17,
         fields: 12,
     },
     fileFilter: (req, file, callback) => {
@@ -44,7 +44,7 @@ const upload = multer({
 });
 
 const fields = upload.fields([
-    { name: 'images', maxCount: 10 },
+    { name: 'images', maxCount: 16 },
     { name: 'mask', maxCount: 1 },
 ]);
 

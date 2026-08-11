@@ -62,16 +62,15 @@ test('all documented gpt-image-2 size presets are enabled by default', (t) => {
     });
 
     assert.deepEqual(service.getAllowedSizes(), [
-        '1024x1024',
         '1k',
         '2k',
-        '2048x2048',
-        '2048x1152',
-        '2560x1440',
-        '1440x2560',
         '4k',
-        '3840x2160',
-        '2160x3840',
+        'auto',
+        '1:1',
+        '4:3',
+        '3:4',
+        '16:9',
+        '9:16',
     ]);
 });
 
@@ -123,6 +122,53 @@ test('text generation rejects reference images and edit requires them', () => {
         body: { ...base.body, requestType: 'edit' },
         images: [],
     }), (error) => error.code === 'invalid_reference_count');
+
+    assert.doesNotThrow(() => service.validateSubmission({
+        ...base,
+        body: { ...base.body, requestType: 'edit' },
+        images: Array.from({ length: 16 }, () => ({ size: 1 })),
+    }));
+
+    assert.throws(() => service.validateSubmission({
+        ...base,
+        body: { ...base.body, requestType: 'edit' },
+        images: Array.from({ length: 17 }, () => ({ size: 1 })),
+    }), (error) => error.code === 'invalid_reference_count');
+});
+
+test('all fixed ratios and resolution tiers can be composed by the frontend', () => {
+    for (const ratio of ['auto', '1:1', '4:3', '3:4', '16:9', '9:16']) {
+        for (const resolution of ['1k', '2k', '4k']) {
+            const size = `${ratio}@${resolution}`;
+            const validated = service.validateSubmission({
+                body: {
+                    idempotencyKey: '1234567890abcdef',
+                    prompt: 'composed image',
+                    requestType: 'generation',
+                    size,
+                },
+                images: [],
+                mask: null,
+            });
+
+            assert.equal(validated.size, size);
+        }
+    }
+});
+
+test('custom exact pixel sizes are accepted within the image pixel budget', () => {
+    const validated = service.validateSubmission({
+        body: {
+            idempotencyKey: '1234567890abcdef',
+            prompt: 'custom image',
+            requestType: 'generation',
+            size: '1536x1024',
+        },
+        images: [],
+        mask: null,
+    });
+
+    assert.equal(validated.size, '1536x1024');
 });
 
 test('one active job blocks every role, including administrators', async (t) => {
@@ -175,19 +221,23 @@ test('organizer quota stops the 31st accepted request', async (t) => {
     }), (error) => error.code === 'daily_quota_exhausted' && error.status === 429);
 });
 
-test('accepted generation stores the mapping without persisting result URLs', async (t) => {
+test('accepted native generation stores the mapping without persisting result URLs', async (t) => {
     mockReservationDatabase(t, { role: 0, used: 2 });
     let createdJob;
     patchMethod(t, AiImageJob, 'create', async (values) => {
         createdJob = createMockJob({ ai_image_job_id: 1, created_time: new Date(), updated_time: new Date(), ...values });
         return createdJob;
     });
-    patchMethod(t, upstreamClient, 'submitGeneration', async () => ({
-        job_id: 'img_123',
-        status: 'pending',
-        created: 1_752_873_600,
-        result_urls: ['https://should-not-be-saved.example/image.png'],
-    }));
+    patchMethod(t, upstreamClient, 'submitGeneration', async (input) => {
+        assert.equal(input.idempotencyKey, '1234567890abcdef');
+        assert.equal(input.model, 'gpt-image-2');
+        return {
+            id: 'img_123',
+            status: 'pending',
+            created_at: '2025-07-18T00:00:00.000Z',
+            result_urls: ['https://should-not-be-saved.example/image.png'],
+        };
+    });
 
     const result = await service.submitJob({
         userId: 7,

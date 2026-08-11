@@ -1,8 +1,8 @@
 const fs = require('fs');
 const fetch = require('node-fetch');
-const FormData = require('form-data');
 
-const DEFAULT_BASE_URL = 'https://img-cn.65535.space';
+const DEFAULT_BASE_URL = 'https://task-api-1-cn.65535.space';
+const DEFAULT_LEGACY_BASE_URL = 'https://img-cn.65535.space';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_RESULT_BYTES = 32 * 1024 * 1024;
 const ALLOWED_RESULT_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp']);
@@ -20,61 +20,90 @@ class AiImageUpstreamError extends Error {
 const getConfig = () => ({
     apiKey: process.env.AI_IMAGE_API_KEY || '',
     baseUrl: String(process.env.AI_IMAGE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
+    legacyBaseUrl: String(process.env.AI_IMAGE_LEGACY_API_BASE_URL || DEFAULT_LEGACY_BASE_URL).replace(/\/+$/, ''),
     timeoutMs: toPositiveInt(process.env.AI_IMAGE_UPSTREAM_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
 });
 
 const isConfigured = () => Boolean(getConfig().apiKey);
 
-const submitGeneration = async ({ model, prompt, size }) => request('/v1/images/generations', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'X-Async-Mode': 'true',
-    },
-    body: JSON.stringify({
-        model,
-        prompt,
-        size,
-        n: 1,
-        response_format: 'url',
-    }),
+const submitGeneration = ({ idempotencyKey, model, prompt, size }) => submitTask({
+    idempotencyKey,
+    input: buildImageInput({ prompt, size }),
+    model,
 });
 
-const submitEdit = async ({ images, mask, model, prompt, size }) => {
-    const form = new FormData();
-    images.forEach((file) => {
-        form.append('image', fs.createReadStream(file.path), {
-            contentType: file.mimetype,
-            filename: file.originalname,
-            knownLength: file.size,
-        });
-    });
-    if (mask) {
-        form.append('mask', fs.createReadStream(mask.path), {
-            contentType: mask.mimetype,
-            filename: mask.originalname,
-            knownLength: mask.size,
-        });
-    }
-    form.append('model', model);
-    form.append('prompt', prompt);
-    form.append('size', size);
-    form.append('response_format', 'url');
-
-    return request('/v1/images/edits', {
-        method: 'POST',
-        headers: {
-            ...form.getHeaders(),
-            'X-Async-Mode': 'true',
-        },
-        body: form,
+const submitEdit = async ({ idempotencyKey, images, mask, model, prompt, size }) => {
+    const [imageUrls, maskUrl] = await Promise.all([
+        Promise.all(images.map(fileToDataUri)),
+        mask ? fileToDataUri(mask) : null,
+    ]);
+    return submitTask({
+        idempotencyKey,
+        input: buildImageInput({ imageUrls, maskUrl, prompt, size }),
+        model,
     });
 };
 
+const submitTask = async ({ idempotencyKey, input, model }) => {
+    const options = {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+            kind: 'image',
+            model,
+            input,
+        }),
+    };
+
+    try {
+        return await request('/v1/tasks', options);
+    } catch (error) {
+        if (!['upstream_network_error', 'upstream_timeout'].includes(error?.code)) throw error;
+        return request('/v1/tasks', options);
+    }
+};
+
+const buildImageInput = ({ imageUrls = [], maskUrl = null, prompt, size }) => {
+    const dimensions = splitSize(size);
+    return {
+        prompt,
+        ...dimensions,
+        n: 1,
+        response_format: 'url',
+        ...(imageUrls.length ? { image_urls: imageUrls } : {}),
+        ...(maskUrl ? { mask: maskUrl } : {}),
+    };
+};
+
+const splitSize = (value) => {
+    const size = String(value || '').trim().toLowerCase();
+    if (/^[124]k$/.test(size)) return { resolution: size };
+    const combined = /^(.+)@([124]k)$/.exec(size);
+    if (combined) return combined[1] === 'auto'
+        ? { resolution: combined[2] }
+        : { size: combined[1], resolution: combined[2] };
+    return size ? { size } : {};
+};
+
+const fileToDataUri = async (file) => {
+    const bytes = await fs.promises.readFile(file.path);
+    return `data:${file.mimetype};base64,${bytes.toString('base64')}`;
+};
+
 const getJob = async (jobId) => {
+    try {
+        return await request(`/v1/tasks/${encodeURIComponent(jobId)}`, { method: 'GET' });
+    } catch (error) {
+        if (error?.status !== 404) throw error;
+    }
+
+    const config = getConfig();
     const response = await request(`/v1/images/async-generations/${encodeURIComponent(jobId)}`, {
         method: 'GET',
-    });
+    }, { baseUrl: config.legacyBaseUrl });
     if (response && Number(response.code) !== 0 && response.code !== undefined) {
         throw new AiImageUpstreamError(String(response.message || 'Unable to query image job'), {
             status: 502,
@@ -159,7 +188,7 @@ const getResultFile = async (url) => {
     }
 };
 
-const request = async (path, options) => {
+const request = async (path, options, { baseUrl } = {}) => {
     const config = getConfig();
     if (!config.apiKey) {
         throw new AiImageUpstreamError('AI image service is not configured', {
@@ -172,7 +201,7 @@ const request = async (path, options) => {
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
     try {
-        const response = await fetch(`${config.baseUrl}${path}`, {
+        const response = await fetch(`${baseUrl || config.baseUrl}${path}`, {
             ...options,
             headers: {
                 Accept: 'application/json',

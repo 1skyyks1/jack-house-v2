@@ -8,7 +8,7 @@ const AiImageJob = require('./models/AiImageJob');
 const AiImageRuntime = require('./models/AiImageRuntime');
 const upstreamClient = require('./upstreamClient');
 
-const MODEL = 'gpt-image-2';
+const DEFAULT_MODEL = 'gpt-image-2';
 const ACTIVE_STATUSES = ['submitting', 'pending', 'running'];
 const TERMINAL_STATUSES = ['done', 'failed', 'cancelled', 'expired'];
 const REMOTE_STATUSES = new Set(['pending', 'running', 'done', 'failed']);
@@ -23,18 +23,19 @@ const TECHNICAL_FAILURE_CODES = new Set([
     'client_gone',
 ]);
 const DEFAULT_ALLOWED_SIZES = [
-    '1024x1024',
     '1k',
     '2k',
-    '2048x2048',
-    '2048x1152',
-    '2560x1440',
-    '1440x2560',
     '4k',
-    '3840x2160',
-    '2160x3840',
+    'auto',
+    '1:1',
+    '4:3',
+    '3:4',
+    '16:9',
+    '9:16',
 ];
 const MAX_IMAGE_PIXELS = 8_294_400;
+const COMPOSABLE_RATIOS = new Set(['auto', '1:1', '4:3', '3:4', '16:9', '9:16']);
+const COMPOSABLE_RESOLUTIONS = new Set(['1k', '2k', '4k']);
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 30;
 const STALE_SUBMISSION_MS = 2 * 60 * 1000;
@@ -56,11 +57,13 @@ const submitJob = async ({ userId, role, body, images = [], mask = null, sourceI
     }
 
     const input = validateSubmission({ body, images, mask });
+    const model = getModel();
     const referenceMetadata = await Promise.all(images.map(buildFileMetadata));
     const maskMetadata = mask ? await buildFileMetadata(mask) : null;
     const reservation = await reserveJob({
         idempotencyKey: input.idempotencyKey,
         maskMetadata,
+        model,
         referenceMetadata,
         requestType: input.requestType,
         prompt: input.prompt,
@@ -80,10 +83,23 @@ const submitJob = async ({ userId, role, body, images = [], mask = null, sourceI
     const job = reservation.job;
     try {
         const submitted = input.requestType === 'edit'
-            ? await upstreamClient.submitEdit({ images, mask, model: MODEL, prompt: input.prompt, size: input.size })
-            : await upstreamClient.submitGeneration({ model: MODEL, prompt: input.prompt, size: input.size });
+            ? await upstreamClient.submitEdit({
+                idempotencyKey: input.idempotencyKey,
+                images,
+                mask,
+                model,
+                prompt: input.prompt,
+                size: input.size,
+            })
+            : await upstreamClient.submitGeneration({
+                idempotencyKey: input.idempotencyKey,
+                model,
+                prompt: input.prompt,
+                size: input.size,
+            });
 
-        if (!submitted?.job_id) {
+        const upstreamJobId = submitted?.id || submitted?.job_id;
+        if (!upstreamJobId) {
             throw new upstreamClient.AiImageUpstreamError('AI image service did not return a job id', {
                 status: 502,
                 code: 'missing_job_id',
@@ -92,9 +108,9 @@ const submitJob = async ({ userId, role, body, images = [], mask = null, sourceI
         }
 
         await job.update({
-            upstream_job_id: String(submitted.job_id),
+            upstream_job_id: String(upstreamJobId),
             status: normalizeStatus(submitted.status, 'pending'),
-            upstream_created_at: parseDate(submitted.created),
+            upstream_created_at: parseDate(submitted.created_at || submitted.created),
             error_code: null,
             error_message: null,
         });
@@ -116,6 +132,7 @@ const submitJob = async ({ userId, role, body, images = [], mask = null, sourceI
 const reserveJob = async ({
     idempotencyKey,
     maskMetadata,
+    model,
     referenceMetadata,
     requestType,
     prompt,
@@ -186,7 +203,7 @@ const reserveJob = async ({
         idempotency_key: idempotencyKey,
         request_type: requestType,
         prompt,
-        model: MODEL,
+        model,
         size,
         reference_count: referenceMetadata.length,
         reference_metadata: referenceMetadata,
@@ -230,7 +247,7 @@ const getUserConfig = async ({ userId, role }) => {
             used,
         },
         activeJob: activeJob ? serializeJob(activeJob) : null,
-        maxReferences: 10,
+        maxReferences: 16,
         maxPromptLength: toPositiveInt(process.env.AI_IMAGE_MAX_PROMPT_LENGTH, 8000),
     };
 };
@@ -508,8 +525,8 @@ const validateSubmission = ({ body = {}, images, mask }) => {
     if (requestType === 'generation' && (images.length > 0 || mask)) {
         throw new AiImageError(400, 'unexpected_images', 'Text generation cannot include reference images');
     }
-    if (requestType === 'edit' && (images.length < 1 || images.length > 10)) {
-        throw new AiImageError(400, 'invalid_reference_count', 'Image editing requires 1 to 10 reference images');
+    if (requestType === 'edit' && (images.length < 1 || images.length > 16)) {
+        throw new AiImageError(400, 'invalid_reference_count', 'Image editing requires 1 to 16 reference images');
     }
 
     const totalBytes = images.reduce((sum, file) => sum + Number(file.size || 0), Number(mask?.size || 0));
@@ -519,7 +536,7 @@ const validateSubmission = ({ body = {}, images, mask }) => {
     }
 
     const size = String(body.size || getAllowedSizes()[0]).trim().toLowerCase();
-    if (!getAllowedSizes().includes(size)) {
+    if (!isAllowedSize(size)) {
         throw new AiImageError(400, 'invalid_size', 'Image size is not allowed');
     }
 
@@ -623,12 +640,26 @@ const getAllowedSizes = () => {
     return sizes.length ? [...new Set(sizes)] : DEFAULT_ALLOWED_SIZES;
 };
 
+const isAllowedSize = (size) => {
+    const allowed = getAllowedSizes();
+    if (allowed.includes(size)) return true;
+    if (/^\d{2,5}x\d{2,5}$/.test(size)) return isSupportedSizeToken(size);
+    const combined = /^(.+)@([124]k)$/.exec(size);
+    return Boolean(combined)
+        && COMPOSABLE_RATIOS.has(combined[1])
+        && COMPOSABLE_RESOLUTIONS.has(combined[2]);
+};
+
 const isSupportedSizeToken = (size) => {
     if (/^[124]k$/.test(size)) return true;
+    if (/^(?:1:1|4:3|3:4|16:9|9:16)(?:@[124]k)?$/.test(size)) return true;
+    if (/^[a-z][a-z0-9_]{1,31}(?:@[124]k)?$/.test(size)) return true;
     const match = /^(\d{2,5})x(\d{2,5})$/.exec(size);
     if (!match) return false;
     return Number(match[1]) * Number(match[2]) <= MAX_IMAGE_PIXELS;
 };
+
+const getModel = () => String(process.env.AI_IMAGE_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
 
 const getGlobalConcurrency = () => Math.min(4, toPositiveInt(process.env.AI_IMAGE_GLOBAL_CONCURRENCY, 4));
 

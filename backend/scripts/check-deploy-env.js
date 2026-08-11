@@ -166,6 +166,10 @@ const validateUploadLimits = () => {
 
 const validateAiImage = () => {
     requireEnv('AI_IMAGE_API_KEY', 'AI_IMAGE_API_KEY is required for the image generation tool');
+    const baseUrl = String(process.env.AI_IMAGE_API_BASE_URL || 'https://task-api-1-cn.65535.space').replace(/\/+$/, '');
+    if (baseUrl === 'https://img-cn.65535.space') {
+        addError('AI_IMAGE_API_BASE_URL must use the native task API; keep img-cn only in AI_IMAGE_LEGACY_API_BASE_URL');
+    }
     const concurrency = Number(process.env.AI_IMAGE_GLOBAL_CONCURRENCY || 4);
     if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 4) {
         addError('AI_IMAGE_GLOBAL_CONCURRENCY must be an integer from 1 to 4');
@@ -178,17 +182,19 @@ const validateAiImage = () => {
         }
     });
 
-    const sizes = String(process.env.AI_IMAGE_ALLOWED_SIZES || '1024x1024,1k,2k,2048x2048,2048x1152,2560x1440,1440x2560,4k,3840x2160,2160x3840')
+    const sizes = String(process.env.AI_IMAGE_ALLOWED_SIZES || '1k,2k,4k,auto,1:1,4:3,3:4,16:9,9:16')
         .split(',')
         .map((value) => value.trim().toLowerCase())
         .filter(Boolean);
     const isSupportedSize = (value) => {
         if (/^[124]k$/.test(value)) return true;
+        if (/^(?:1:1|4:3|3:4|16:9|9:16)(?:@[124]k)?$/.test(value)) return true;
+        if (/^[a-z][a-z0-9_]{1,31}(?:@[124]k)?$/.test(value)) return true;
         const match = /^(\d{2,5})x(\d{2,5})$/.exec(value);
         return Boolean(match) && Number(match[1]) * Number(match[2]) <= 8294400;
     };
     if (!sizes.length || sizes.some((value) => !isSupportedSize(value))) {
-        addError('AI_IMAGE_ALLOWED_SIZES must use 1k/2k/4k or WIDTHxHEIGHT values up to 8294400 pixels');
+        addError('AI_IMAGE_ALLOWED_SIZES contains an unsupported size, ratio, preset, or resolution combination');
     }
 };
 
