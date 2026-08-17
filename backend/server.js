@@ -25,6 +25,7 @@ const Backend = require('i18next-fs-backend');
 const i18nextMiddleware = require('i18next-http-middleware');
 const csrfMiddleware = require('./middleware/csrfMiddleware');
 const aiImageModule = require('./modules/aiImage');
+const rewardsRoutes = require('./modules/rewards/router');
 require('dotenv').config();
 
 i18next.use(Backend).use(i18nextMiddleware.LanguageDetector).init({
@@ -284,6 +285,7 @@ app.use('/permissions', commonLimiter, permissionsRoutes)
 app.use('/t', commonLimiter, tournamentRoutes)
 app.use('/upload', commonLimiter, uploadRoutes)
 app.use('/tool', toolRoutes)
+app.use('/rewards', commonLimiter, rewardsRoutes)
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${port}`);

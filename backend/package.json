@@ -20,6 +20,7 @@
     "backfill:tournament-game-miss-count": "node scripts/backfill-tournament-game-miss-count.js",
     "backfill:tournament-status": "node scripts/backfill-tournament-status.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
+    "migrate:rewards": "node scripts/migrate-rewards.js",
     "test": "node --test test/*.test.js"
   },
   "author": "",
