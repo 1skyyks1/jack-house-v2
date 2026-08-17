@@ -29,9 +29,9 @@ const checkAuth = (roles = []) => {
             next()
         } catch (error) {
             if (error.name === 'TokenExpiredError') {
-                return res.status(401).json({ message: req.t('auth.pleaseLogin') });
+                return res.status(401).json({ message: req.t('authMid.pleaseLogin') });
             }
-            return res.status(401).json({ message: req.t('auth.pleaseLogin') });
+            return res.status(401).json({ message: req.t('authMid.pleaseLogin') });
         }
     }
 }

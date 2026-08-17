@@ -10,6 +10,7 @@
     "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
     "migrate:pack-map-beatmap-id": "node scripts/migrate-pack-map-beatmap-id.js",
     "migrate:pack-feedback": "node scripts/migrate-pack-feedback.js",
+    "migrate:pack-tag-taxonomy": "node scripts/migrate-pack-tag-taxonomy.js",
     "migrate:badges-to-github": "node scripts/migrate-badges-to-github.js",
     "migrate:event-stage-backgrounds-to-github": "node scripts/migrate-event-stage-backgrounds-to-github.js",
     "migrate:ai-image-jobs": "node scripts/migrate-ai-image-jobs.js",

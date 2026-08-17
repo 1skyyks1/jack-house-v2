@@ -26,7 +26,7 @@ router.put('/:file_id', checkAuth(), postFileController.updatePostFile);
 router.put('/review/:file_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), postFileController.reviewPostFile)
 
 // 删除投稿
-router.delete('/:file_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), postFileController.deleteFile);
+router.delete('/:file_id', checkAuth(), postFileController.deleteFile);
 
 // 获取url
 router.get('/download/:file_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), postFileController.getFileUrl);

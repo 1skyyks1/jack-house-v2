@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../../config/db'); // 引入数据库配置
+const { getPostFileLockedAt, isPostFileLocked } = require('../../utils/postFileLock');
 
 const PostFile = sequelize.define('PostFile', {
     file_id: {
@@ -67,6 +68,18 @@ const PostFile = sequelize.define('PostFile', {
     checksum: {
         type: DataTypes.STRING(64),
         allowNull: true,
+    },
+    locked_at: {
+        type: DataTypes.VIRTUAL,
+        get() {
+            return getPostFileLockedAt(this.getDataValue('uploaded_time'));
+        },
+    },
+    is_locked: {
+        type: DataTypes.VIRTUAL,
+        get() {
+            return isPostFileLocked(this.getDataValue('uploaded_time'));
+        },
     }
 }, {
     tableName: 'post_file',

@@ -8,6 +8,7 @@ const fs = require('fs')
 const path = require('path')
 const storage = require('../../services/storage')
 const { getObjectNameHash, hashFile } = require('../../utils/imageOptimizer')
+const { getPostFileDeleteAccess, isPostFileLocked } = require('../../utils/postFileLock')
 
 const POSTFILES_STORAGE_SCOPE = 'POSTFILES';
 const EXTERNAL_STORAGE_PROVIDER = 'external';
@@ -483,6 +484,9 @@ exports.reviewPostFile = async (req, res) => {
         if(!originalPostFile) {
             return res.status(404).json({ message: req.t('postFile.notFound') });
         }
+        if (!isPostFileLocked(originalPostFile.uploaded_time)) {
+            return res.status(409).json({ message: req.t('postFile.reviewBeforeLocked') });
+        }
         await originalPostFile.update({ status, feedback });
         res.status(200).json({ message: req.t('postFile.reviewSuccess') });
     } catch (err) {
@@ -498,16 +502,47 @@ exports.deleteFile = async (req, res) => {
         if (!file) {
             return res.status(404).json({ message: req.t('postFile.notFound') });
         }
+
+        const deleteAccess = getPostFileDeleteAccess({
+            ownerId: file.user_id,
+            uploadedTime: file.uploaded_time,
+            userId: req.user.user_id,
+            userRole: req.user.role,
+        });
+        if (deleteAccess === 'forbidden') {
+            return res.status(403).json({ message: req.t('postFile.deleteForbidden') });
+        }
+        if (deleteAccess === 'expired') {
+            return res.status(403).json({ message: req.t('postFile.deleteWindowExpired') });
+        }
+
         await sequelize.transaction(async (t) => {
             await file.destroy({ transaction: t });
             if (getPostFileProvider(file) === EXTERNAL_STORAGE_PROVIDER) {
                 return;
             }
 
+            const objectName = getPostFileObjectName(file);
+            const provider = getPostFileProvider(file);
+            const referenceConditions = [{ storage_provider: provider, object_key: objectName }];
+            if (provider === 'minio') {
+                referenceConditions.push({ storage_provider: null, file_url: objectName });
+            }
+            const remainingReferences = await PostFile.count({
+                transaction: t,
+                where: {
+                    file_id: { [Op.ne]: file.file_id },
+                    [Op.or]: referenceConditions,
+                },
+            });
+            if (remainingReferences > 0) {
+                return;
+            }
+
             await storage.deleteFile(POSTFILES_STORAGE_SCOPE, {
-                provider: getPostFileProvider(file),
+                provider,
                 bucket: getPostFilesBucket(),
-                objectName: getPostFileObjectName(file),
+                objectName,
             });
         })
         res.json({ message: req.t('postFile.deleteSuccess') });

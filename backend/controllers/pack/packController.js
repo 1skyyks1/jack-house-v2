@@ -1,6 +1,7 @@
 const { Pack, Tag, User, PackMap, PackComment, PackFeedback } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
+const { validatePackTagSelection } = require('../../services/packTagService');
 
 // 创建新图包（非osu）
 exports.createPack = async (req, res) => {
@@ -9,6 +10,17 @@ exports.createPack = async (req, res) => {
 
     if (!title || !Array.isArray(tags)) {
         return res.status(400).json({ message: req.t('pack.createMissing') });
+    }
+
+    let selection;
+    try {
+        selection = await validatePackTagSelection(tags, type);
+        if (!selection.valid) {
+            return res.status(400).json({ message: req.t('tag.invalidForPackType') });
+        }
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: req.t('pack.createFailed') });
     }
 
     const t = await sequelize.transaction();
@@ -23,7 +35,7 @@ exports.createPack = async (req, res) => {
         }, { transaction: t });
 
         // 关联标签
-        await pack.addTags(tags, { transaction: t });
+        await pack.addTags(selection.tagIds, { transaction: t });
         await t.commit();
 
         res.status(201).json({ data: pack });
@@ -52,7 +64,7 @@ exports.getAllPacks = async (req, res) => {
                 {
                     model: Tag,
                     as: 'tags',
-                    attributes: ['tag_id', 'tag_name'],
+                    attributes: ['tag_id', 'tag_key', 'tag_name', 'category', 'name_zh', 'name_en', 'sort_order', 'enabled'],
                     through: { attributes: [] }
                 },
                 {
@@ -125,7 +137,7 @@ exports.getPackById = async (req, res) => {
                 {
                     model: Tag,
                     as: 'tags',
-                    attributes: ['tag_id', 'tag_name'],
+                    attributes: ['tag_id', 'tag_key', 'tag_name', 'category', 'name_zh', 'name_en', 'sort_order', 'enabled'],
                     through: { attributes: [] }
                 },
                 {

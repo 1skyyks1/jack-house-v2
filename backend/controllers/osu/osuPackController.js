@@ -1,6 +1,7 @@
 const { User, Pack, PackMap } = require('../../models/index');
 const sequelize = require('../../config/db')
 const osu = require("osu-api-v2-js");
+const { validatePackTagSelection } = require('../../services/packTagService');
 
 const CLIENT_ID = Number(process.env.OSU_CLIENT_ID);
 const CLIENT_SECRET = process.env.OSU_CLIENT_SECRET;
@@ -39,6 +40,10 @@ exports.packFromOsu = async (req, res) => {
         return res.status(400).json({ message: req.t('pack.createFailed') });
     }
     try {
+        const selection = await validatePackTagSelection(tags, type);
+        if (!selection.valid) {
+            return res.status(400).json({ message: req.t('tag.invalidForPackType') });
+        }
         const existing = await Pack.findOne({
             where: { osu_bid: beatmapsetId }
         })
@@ -64,7 +69,7 @@ exports.packFromOsu = async (req, res) => {
                 description: beatmapset.description.description,
                 cover_id: parseInt(beatmapset.covers.cover.split('?')[1], 10)
             }, { transaction: t });
-            await pack.addTags(tags, { transaction: t });
+            await pack.addTags(selection.tagIds, { transaction: t });
             const packMapData = beatmapset.beatmaps.map(beatmap => {
                 return {
                     pack_id: pack.pack_id,
