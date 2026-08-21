@@ -312,7 +312,7 @@ exports.getFileByUserId = async (req, res) => {
 
     try {
         const { count, rows } = await PostFile.findAndCountAll({
-            attributes: ['file_id', 'post_id', 'user_id', 'file_name', 'uploaded_time', 'status', 'size'],
+            attributes: ['file_id', 'post_id', 'user_id', 'file_name', 'uploaded_time', 'status', 'size', 'feedback'],
             where: { user_id },
             order: [['uploaded_time', 'DESC']],
             limit,

@@ -3,7 +3,7 @@ const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 const { ROLES } = require("../../config/roles");
 const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
-const { syncRichTextAssetReferences } = require('../../services/richTextAssetService');
+const { extractImageSources, syncRichTextAssetReferences } = require('../../services/richTextAssetService');
 // const { addFolder, getAuthCode } = require('../../utils/pan');
 
 // 获取所有帖子
@@ -21,7 +21,7 @@ exports.getAllPosts = async (req, res) => {
                 {
                     model: PostTranslation,
                     as: 'translations',
-                    attributes: ['title', 'language'],
+                    attributes: ['title', 'content', 'language'],
                 },
                 {
                     model: User,
@@ -58,7 +58,7 @@ exports.getPostByType = async (req, res) => {
                 {
                     model: PostTranslation,
                     as: 'translations',
-                    attributes: ['title', 'language'],
+                    attributes: ['title', 'content', 'language'],
                 },
                 {
                     model: User,
@@ -205,10 +205,14 @@ exports.getRequestList = async (req, res) => {
 const processPosts = (posts) => {
     return posts.map(post => {
         const postData = post.toJSON();
+        const zhTranslation = postData.translations.find(t => t.language === 'zh');
+        const enTranslation = postData.translations.find(t => t.language === 'en');
 
         // 提取翻译内容
-        postData.title_zh = postData.translations.find(t => t.language === 'zh')?.title || null;
-        postData.title_en = postData.translations.find(t => t.language === 'en')?.title || null;
+        postData.title_zh = zhTranslation?.title || null;
+        postData.title_en = enTranslation?.title || null;
+        postData.cover_image_zh = extractImageSources(zhTranslation?.content)[0] || null;
+        postData.cover_image_en = extractImageSources(enTranslation?.content)[0] || null;
         delete postData.translations;
 
         if(postData.user){
