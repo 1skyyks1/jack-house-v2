@@ -1,6 +1,7 @@
 const PROVIDERS = {
     minio: () => require('./minioStorage'),
     github: () => require('./githubStorage'),
+    pngurl: () => require('./pngUrlStorage'),
 };
 
 const getProviderName = (scope) => {
@@ -38,10 +39,11 @@ const getStorageProvider = (scope, providerOverride) => {
 const uploadFile = async (scope, options) => {
     const { provider: providerOverride, ...uploadOptions } = options;
     const providerName = (providerOverride || getProviderName(scope)).toLowerCase();
-    if (providerName !== 'github') {
-        throw new Error(`Uploads are only supported by GitHub storage: ${scope}`);
+    const provider = getStorageProvider(scope, providerName);
+    if (typeof provider.uploadFile !== 'function') {
+        throw new Error(`Uploads are not supported by ${providerName} storage: ${scope}`);
     }
-    const uploaded = await getStorageProvider(scope, providerName).uploadFile({ scope, ...uploadOptions });
+    const uploaded = await provider.uploadFile({ scope, ...uploadOptions });
 
     return {
         provider: providerName,

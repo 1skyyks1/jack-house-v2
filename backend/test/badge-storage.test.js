@@ -49,7 +49,7 @@ test('GitHub badge records reuse their stable public URL', async (t) => {
     assert.equal(getDownloadUrl.mock.callCount(), 0);
 });
 
-test('badge uploads always override the configured provider with GitHub', async (t) => {
+test('new badge uploads use PNGURL without changing the legacy storage provider', async (t) => {
     let captured;
     t.mock.method(storage, 'uploadFile', async (scope, options) => {
         captured = { scope, options };
@@ -62,15 +62,43 @@ test('badge uploads always override the configured provider with GitHub', async 
         mimeType: 'image/webp',
     });
 
-    assert.equal(uploaded.provider, 'github');
+    assert.equal(uploaded.provider, 'pngurl');
     assert.deepEqual(captured, {
         scope: 'BADGES',
         options: {
-            provider: 'github',
+            provider: 'pngurl',
             bucket: 'badge-test-bucket',
             objectName: 'badge.webp',
             filePath: '/tmp/badge.webp',
             mimeType: 'image/webp',
+        },
+    });
+});
+
+test('PNGURL badge records reuse their returned URL and delete through PNGURL', async (t) => {
+    const getDownloadUrl = t.mock.method(storage, 'getDownloadUrl', async () => {
+        throw new Error('should not generate another URL');
+    });
+    let deleted;
+    t.mock.method(storage, 'deleteFile', async (scope, options) => {
+        deleted = { scope, options };
+    });
+
+    const badge = {
+        storage_provider: 'pngurl',
+        object_key: 'pngurl-key',
+        public_url: 'https://images.example.test/pngurl-key.webp',
+    };
+
+    assert.equal(await getBadgeImageUrl(badge), badge.public_url);
+    assert.equal(getDownloadUrl.mock.callCount(), 0);
+    await deleteBadgeFile(badge);
+    assert.deepEqual(deleted, {
+        scope: 'BADGES',
+        options: {
+            provider: 'pngurl',
+            bucket: 'badge-test-bucket',
+            objectName: 'pngurl-key',
         },
     });
 });

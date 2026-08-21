@@ -1,4 +1,4 @@
-const { User, PostFile, Post } = require('../../models')
+const { User, PostFile, Post, PostTranslation } = require('../../models')
 const sequelize = require('../../config/db')
 const { Op } = require("sequelize");
 // const { fetchUploadUrl, getSign, getAuthCode } = require('../../utils/pan');
@@ -19,6 +19,56 @@ const getPostFilesBucket = () => storage.getBucketName(
     ['MINIO_POSTFILES_BUCKET'],
     null
 );
+
+const resolvePostFileDownloadUrl = async (file) => {
+    if (file.public_url || file.download_url) {
+        return file.download_url || file.public_url;
+    }
+
+    return storage.getDownloadUrl(POSTFILES_STORAGE_SCOPE, {
+        provider: getPostFileProvider(file),
+        bucket: getPostFilesBucket(),
+        objectName: getPostFileObjectName(file),
+    });
+};
+
+const sanitizeArchiveFileName = (fileName, fileId) => {
+    const normalized = path.basename(String(fileName || ''))
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .trim();
+    return normalized || `submission-${fileId}`;
+};
+
+const deduplicateArchiveFileName = (fileName, usedNames) => {
+    const extension = path.extname(fileName);
+    const stem = path.basename(fileName, extension);
+    let candidate = fileName;
+    let suffix = 2;
+
+    while (usedNames.has(candidate.toLocaleLowerCase())) {
+        candidate = `${stem} (${suffix})${extension}`;
+        suffix += 1;
+    }
+
+    usedNames.add(candidate.toLocaleLowerCase());
+    return candidate;
+};
+
+const buildArchiveName = (post, postId) => {
+    const translations = post.translations || [];
+    const title = translations.find((translation) => translation.language === 'en')?.title
+        || translations.find((translation) => translation.language === 'zh')?.title
+        || `post-${postId}-submissions`;
+    const safeTitle = String(title)
+        .replace(/\.zip$/i, '')
+        .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '-')
+        .replace(/\s+/g, ' ')
+        .replace(/[. ]+$/g, '')
+        .trim()
+        .slice(0, 120);
+
+    return `${safeTitle || `post-${postId}-submissions`}.zip`;
+};
 
 const getMaxTotalSizeBytes = () => {
     const value = Number(process.env.POSTFILE_MAX_TOTAL_SIZE_MB);
@@ -438,20 +488,68 @@ exports.getFileUrl = async (req, res) => {
         if(!file) {
             return res.status(404).json({ message: req.t('postFile.notFound') });
         }
-        if (file.public_url || file.download_url) {
-            return res.status(200).json({ data: file.public_url || file.download_url });
-        }
-        const url = await storage.getDownloadUrl(POSTFILES_STORAGE_SCOPE, {
-            provider: getPostFileProvider(file),
-            bucket: getPostFilesBucket(),
-            objectName: getPostFileObjectName(file),
-        })
+        const url = await resolvePostFileDownloadUrl(file);
         res.status(200).json({ data: url });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: req.t('postFile.getUrlFailed') });
     }
 }
+
+// 返回指定征稿帖下全部投稿的直链清单，文件内容由浏览器直接从存储源下载。
+exports.getPostFilesDownloadManifest = async (req, res) => {
+    const postId = normalizePositiveInteger(req.params.post_id);
+
+    if (!postId) {
+        return res.status(400).json({ message: req.t('postFile.invalidPostId') });
+    }
+
+    try {
+        const post = await Post.findByPk(postId, {
+            attributes: ['post_id'],
+            include: [{
+                model: PostTranslation,
+                as: 'translations',
+                attributes: ['title', 'language'],
+                required: false,
+            }],
+        });
+        if (!post) {
+            return res.status(404).json({ message: req.t('post.notFound') });
+        }
+
+        const files = await PostFile.findAll({
+            where: { post_id: postId },
+            order: [['uploaded_time', 'ASC'], ['file_id', 'ASC']],
+        });
+
+        if (files.length === 0) {
+            return res.status(404).json({ message: req.t('postFile.noFiles') });
+        }
+
+        const usedNames = new Set();
+        const archiveName = buildArchiveName(post, postId);
+        const manifestFiles = await Promise.all(files.map(async (file) => {
+            const safeName = sanitizeArchiveFileName(file.file_name, file.file_id);
+            return {
+                name: deduplicateArchiveFileName(safeName, usedNames),
+                size: Number(file.size || 0),
+                url: await resolvePostFileDownloadUrl(file),
+            };
+        }));
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({
+            data: {
+                archiveName,
+                files: manifestFiles,
+            },
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: req.t('postFile.manifestFailed') });
+    }
+};
 
 // 更新投稿备注
 exports.updatePostFile = async (req, res) => {

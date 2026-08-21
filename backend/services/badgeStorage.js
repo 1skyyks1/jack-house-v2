@@ -2,6 +2,7 @@ const storage = require('./storage');
 
 const BADGES_STORAGE_SCOPE = 'BADGES';
 const BADGES_STORAGE_PROVIDER = 'github';
+const getBadgeUploadProvider = () => process.env.BADGES_UPLOAD_PROVIDER || 'pngurl';
 
 const getBadgeObjectName = (badge) => badge.object_key || badge.minio_img_name;
 
@@ -12,7 +13,7 @@ const getBadgesBucket = () => storage.getBucketName(
 );
 
 const getBadgeImageUrl = async (badge) => {
-    if (badge.storage_provider === BADGES_STORAGE_PROVIDER && (badge.public_url || badge.download_url)) {
+    if (['github', 'pngurl'].includes(badge.storage_provider) && (badge.public_url || badge.download_url)) {
         return badge.public_url || badge.download_url;
     }
 
@@ -30,7 +31,7 @@ const getBadgeImageUrl = async (badge) => {
 
 const uploadBadgeFile = async (options) => storage.uploadFile(BADGES_STORAGE_SCOPE, {
     ...options,
-    provider: BADGES_STORAGE_PROVIDER,
+    provider: getBadgeUploadProvider(),
     bucket: getBadgesBucket(),
 });
 
@@ -41,7 +42,7 @@ const deleteBadgeFile = async (badge) => {
     }
 
     await storage.deleteFile(BADGES_STORAGE_SCOPE, {
-        provider: BADGES_STORAGE_PROVIDER,
+        provider: badge.storage_provider === 'pngurl' ? 'pngurl' : BADGES_STORAGE_PROVIDER,
         bucket: getBadgesBucket(),
         objectName,
     });

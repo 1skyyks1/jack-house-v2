@@ -8,6 +8,7 @@ const storage = require('../../services/storage')
 const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer')
 
 const EVENT_STAGE_BG_STORAGE_SCOPE = 'EVENT_STAGE_BG';
+const getEventStageBgUploadProvider = () => process.env.EVENT_STAGE_BG_UPLOAD_PROVIDER || 'pngurl';
 const getEventStageBgObjectName = (stage) => stage.object_key || stage.minio_bg;
 const getEventStageBgProvider = (stage) => stage.storage_provider || 'minio';
 const getEventStageBgBucket = () => storage.getBucketName(
@@ -101,6 +102,7 @@ exports.createStage = [
                 const checksum = await hashFile(filePath);
                 const objectName = buildContentHashObjectName(checksum, optimized.mimeType, fileName);
                 const uploaded = await storage.uploadFile(EVENT_STAGE_BG_STORAGE_SCOPE, {
+                    provider: getEventStageBgUploadProvider(),
                     bucket: getEventStageBgBucket(),
                     objectName,
                     filePath,

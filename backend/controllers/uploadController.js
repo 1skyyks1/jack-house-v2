@@ -6,6 +6,7 @@ const { recordUploadedRichTextAsset } = require('../services/richTextAssetServic
 const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../utils/imageOptimizer');
 
 const RICHTEXT_STORAGE_SCOPE = 'RICHTEXT';
+const getRichTextUploadProvider = () => process.env.RICHTEXT_UPLOAD_PROVIDER || 'pngurl';
 
 const getRichTextBucket = () => storage.getBucketName(
     RICHTEXT_STORAGE_SCOPE,
@@ -41,6 +42,7 @@ exports.uploadRichTextImage = [
             const checksum = await hashFile(file.path);
             const objectName = buildContentHashObjectName(checksum, optimized.mimeType, file.filename);
             const uploaded = await storage.uploadFile(RICHTEXT_STORAGE_SCOPE, {
+                provider: getRichTextUploadProvider(),
                 bucket,
                 objectName,
                 filePath: file.path,

@@ -11,7 +11,7 @@ test('runtime uploads reject the MinIO provider', async () => {
             objectName: 'example.txt',
             filePath: '/tmp/example.txt',
         }),
-        /Uploads are only supported by GitHub storage/
+        /Uploads are not supported by minio storage/
     );
 });
 

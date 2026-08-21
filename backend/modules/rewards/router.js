@@ -2,6 +2,7 @@ const express = require('express');
 const checkAuth = require('../../middleware/authMiddleware');
 const { ROLES } = require('../../config/roles');
 const service = require('./service');
+const { createRewardImageUploadGrant } = require('./pngUrlClient');
 
 const router = express.Router();
 const adminOnly = checkAuth([ROLES.ADMIN]);
@@ -33,6 +34,11 @@ router.post('/redeem', checkAuth(), asyncRoute(async (req, res) => {
 
 router.get('/admin/items', adminOnly, asyncRoute(async (req, res) => {
     res.json({ data: await service.listItems({ admin: true }) });
+}));
+
+router.post('/admin/image-upload-token', adminOnly, asyncRoute(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ data: await createRewardImageUploadGrant() });
 }));
 
 router.post('/admin/items', adminOnly, asyncRoute(async (req, res) => {

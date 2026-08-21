@@ -88,6 +88,9 @@
     "uploadFailed": "文件上传失败",
     "noFile": "没有文件上传",
     "getUrlFailed": "获取投稿URL失败",
+    "invalidPostId": "征稿帖 ID 无效",
+    "noFiles": "该征稿帖暂无投稿文件",
+    "manifestFailed": "获取投稿文件下载清单失败",
     "updateSuccess": "投稿更新成功",
     "updateFailed": "更新失败",
     "reviewSuccess": "投稿审核成功",
@@ -159,10 +162,10 @@
     "serverError": "服务器内部错误"
   },
   "stage": {
-    "notFound": "项目不存在",
-    "createSuccess": "项目创建成功",
-    "updateSuccess": "项目更新成功",
-    "deleteSuccess": "项目删除成功",
+    "notFound": "Stage 不存在",
+    "createSuccess": "Stage 创建成功",
+    "updateSuccess": "Stage 更新成功",
+    "deleteSuccess": "Stage 删除成功",
     "missingRequiredFields": "缺少必填信息",
     "fileError": "文件错误",
     "serverError": "服务器内部错误"

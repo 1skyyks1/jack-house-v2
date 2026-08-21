@@ -31,4 +31,7 @@ router.delete('/:file_id', checkAuth(), postFileController.deleteFile);
 // 获取url
 router.get('/download/:file_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), postFileController.getFileUrl);
 
+// 获取指定征稿帖下全部投稿的直链下载清单
+router.get('/download-manifest/:post_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), postFileController.getPostFilesDownloadManifest);
+
 module.exports = router;
