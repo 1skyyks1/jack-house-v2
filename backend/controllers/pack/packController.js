@@ -47,7 +47,7 @@ exports.createPack = async (req, res) => {
 
 // 获取图包列表（带筛选和分页）
 exports.getAllPacks = async (req, res) => {
-    const { page, pageSize, searchKeys, tags, type, ranked, loved, sort } = req.query;
+    const { page, pageSize, searchKeys, tags, type, graveyard, ranked, loved, sort } = req.query;
     const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
     const limit = parseInt(pageSize, 10);
     const keyword = decodeURIComponent(searchKeys || '');
@@ -98,6 +98,7 @@ exports.getAllPacks = async (req, res) => {
         }
 
         const statusArr = [];
+        if (graveyard) statusArr.push(-2);
         if (ranked) statusArr.push(1);
         if (loved) statusArr.push(4);
         if (statusArr.length > 0) {
