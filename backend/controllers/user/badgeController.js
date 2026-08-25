@@ -6,6 +6,7 @@ const sequelize = require('../../config/db')
 const {
     deleteBadgeFile,
     getBadgeImageUrl,
+    getBadgeUploadProvider,
     uploadBadgeFile,
 } = require('../../services/badgeStorage')
 const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer')
@@ -25,7 +26,8 @@ exports.uploadBadge = [
         const fileName = file.filename;
 
         try {
-            const optimized = await optimizeImageFile(file, { convertToWebp: true });
+            const uploadProvider = getBadgeUploadProvider();
+            const optimized = await optimizeImageFile(file, { convertToWebp: uploadProvider !== 'pngurl' });
             const checksum = await hashFile(filePath);
             const objectName = buildContentHashObjectName(checksum, optimized.mimeType, fileName);
             const uploaded = await uploadBadgeFile({

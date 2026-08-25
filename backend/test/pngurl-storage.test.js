@@ -7,7 +7,6 @@ const originalEnv = {
     PNG_URL_API_BASE_URL: process.env.PNG_URL_API_BASE_URL,
     PNG_URL_API_TOKEN: process.env.PNG_URL_API_TOKEN,
     PNG_URL_RICHTEXT_STRATEGY_ID: process.env.PNG_URL_RICHTEXT_STRATEGY_ID,
-    PNG_URL_STRATEGY_ID: process.env.PNG_URL_STRATEGY_ID,
 };
 
 afterEach(() => {
@@ -17,11 +16,41 @@ afterEach(() => {
     }
 });
 
-test('uploads an optimized image privately and returns PNGURL storage metadata', async () => {
+test('uses a scope-specific strategy only when explicitly configured', async () => {
+    process.env.PNG_URL_API_BASE_URL = 'https://images.example.test/api/v1';
+    process.env.PNG_URL_API_TOKEN = 'permanent-secret';
+    process.env.PNG_URL_RICHTEXT_STRATEGY_ID = '7';
+    let request;
+
+    await pngUrlStorage.uploadFile({
+        scope: 'RICHTEXT',
+        objectName: 'content-hash.jpg',
+        filePath: __filename,
+        mimeType: 'image/jpeg',
+        fetchImpl: async (url, options) => {
+            request = { url, options };
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    status: true,
+                    data: {
+                        key: 'strategy-key',
+                        url: 'https://images.example.test/strategy-key.jpg',
+                    },
+                }),
+            };
+        },
+    });
+
+    const formParts = request.options.body._streams.filter((part) => typeof part === 'string').join('\n');
+    assert.match(formParts, /name="strategy_id"[\s\S]*7/);
+});
+
+test('uploads an optimized image publicly and returns PNGURL storage metadata', async () => {
     process.env.PNG_URL_API_BASE_URL = 'https://images.example.test/api/v1/';
     process.env.PNG_URL_API_TOKEN = 'permanent-secret';
-    process.env.PNG_URL_STRATEGY_ID = '7';
-    process.env.PNG_URL_RICHTEXT_STRATEGY_ID = '3';
+    delete process.env.PNG_URL_RICHTEXT_STRATEGY_ID;
     let request;
 
     const uploaded = await pngUrlStorage.uploadFile({
@@ -48,8 +77,8 @@ test('uploads an optimized image privately and returns PNGURL storage metadata',
     assert.equal(request.url, 'https://images.example.test/api/v1/upload');
     assert.equal(request.options.headers.Authorization, 'Bearer permanent-secret');
     const formParts = request.options.body._streams.filter((part) => typeof part === 'string').join('\n');
-    assert.match(formParts, /name="strategy_id"[\s\S]*3/);
-    assert.match(formParts, /name="permission"[\s\S]*0/);
+    assert.doesNotMatch(formParts, /name="strategy_id"/);
+    assert.match(formParts, /name="permission"[\s\S]*1/);
     assert.deepEqual(uploaded, {
         objectName: '20260819-private-key',
         objectKey: '20260819-private-key',

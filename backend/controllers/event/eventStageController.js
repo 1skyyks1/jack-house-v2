@@ -94,15 +94,16 @@ exports.createStage = [
         }
 
         try {
+            const uploadProvider = getEventStageBgUploadProvider();
             const stageData = await Promise.all(stages.map(async (stage, index) => {
                 const file = files[index];
                 const filePath = file.path;
                 const fileName = file.filename;
-                const optimized = await optimizeImageFile(file, { convertToWebp: true });
+                const optimized = await optimizeImageFile(file, { convertToWebp: uploadProvider !== 'pngurl' });
                 const checksum = await hashFile(filePath);
                 const objectName = buildContentHashObjectName(checksum, optimized.mimeType, fileName);
                 const uploaded = await storage.uploadFile(EVENT_STAGE_BG_STORAGE_SCOPE, {
-                    provider: getEventStageBgUploadProvider(),
+                    provider: uploadProvider,
                     bucket: getEventStageBgBucket(),
                     objectName,
                     filePath,

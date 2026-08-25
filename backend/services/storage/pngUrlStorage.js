@@ -3,12 +3,23 @@ const FormData = require('form-data');
 const fetch = require('node-fetch');
 
 const DEFAULT_API_BASE_URL = 'https://pngurl.com/api/v1';
-const DEFAULT_STRATEGY_ID = 3;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 
 const positiveInteger = (value, fallback) => {
     const parsed = Number(value);
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const getOptionalStrategyId = (scope) => {
+    const envName = `PNG_URL_${scope}_STRATEGY_ID`;
+    const value = String(process.env[envName] || '').trim();
+    if (!value) return null;
+
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        throw new Error(`${envName} must be a positive integer`);
+    }
+    return parsed;
 };
 
 const getConfig = (scope) => {
@@ -19,10 +30,7 @@ const getConfig = (scope) => {
 
     return {
         apiBaseUrl: String(process.env.PNG_URL_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, ''),
-        strategyId: positiveInteger(
-            process.env[`PNG_URL_${scope}_STRATEGY_ID`] || process.env.PNG_URL_STRATEGY_ID,
-            DEFAULT_STRATEGY_ID,
-        ),
+        strategyId: getOptionalStrategyId(scope),
         token,
         timeoutMs: positiveInteger(process.env.PNG_URL_REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),
     };
@@ -58,8 +66,10 @@ const uploadFile = async ({ scope, objectName, filePath, mimeType, fetchImpl = f
         filename: objectName,
         contentType: mimeType || 'application/octet-stream',
     });
-    form.append('strategy_id', String(config.strategyId));
-    form.append('permission', '0');
+    if (config.strategyId) {
+        form.append('strategy_id', String(config.strategyId));
+    }
+    form.append('permission', '1');
 
     const response = await fetchWithTimeout(fetchImpl, `${config.apiBaseUrl}/upload`, {
         method: 'POST',

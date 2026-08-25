@@ -54,6 +54,7 @@ module.exports = {
     deleteBadgeFile,
     getBadgeImageUrl,
     getBadgeObjectName,
+    getBadgeUploadProvider,
     getBadgesBucket,
     uploadBadgeFile,
 };

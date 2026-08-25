@@ -38,11 +38,12 @@ exports.uploadRichTextImage = [
         };
 
         try {
-            const optimized = await optimizeImageFile(file, { convertToWebp: true });
+            const uploadProvider = getRichTextUploadProvider();
+            const optimized = await optimizeImageFile(file, { convertToWebp: uploadProvider !== 'pngurl' });
             const checksum = await hashFile(file.path);
             const objectName = buildContentHashObjectName(checksum, optimized.mimeType, file.filename);
             const uploaded = await storage.uploadFile(RICHTEXT_STORAGE_SCOPE, {
-                provider: getRichTextUploadProvider(),
+                provider: uploadProvider,
                 bucket,
                 objectName,
                 filePath: file.path,
