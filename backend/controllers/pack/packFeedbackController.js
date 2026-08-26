@@ -2,6 +2,7 @@ const { Pack, PackFeedback, User } = require('../../models');
 
 const CATEGORIES = new Set([
     'incorrect_tag',
+    'outdated_info',
     'duplicate',
     'copyright_or_violation',
     'other',

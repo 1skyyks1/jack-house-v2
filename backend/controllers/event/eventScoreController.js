@@ -9,8 +9,10 @@ exports.getStageScore = async (req, res) => {
     const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
     const limit = parseInt(pageSize, 10);
     try {
+        const stage = await EventStage.findByPk(stage_id, { attributes: ['event_id'] });
+        if (!stage) return res.status(404).json({ message: req.t('score.notFound') });
         const { count, rows } = await EventScore.findAndCountAll({
-            where: { stage_id },
+            where: { stage_id, event_id: stage.event_id },
             limit,
             offset,
             order: [['score', 'DESC'], ['updated_time', 'ASC']],
@@ -39,6 +41,7 @@ exports.getEventScore = async (req, res) => {
     const limit = parseInt(pageSize, 10);
     try {
         const { count, rows } = await EventScore.findAndCountAll({
+            where: { event_id },
             attributes: [
                 'user_id',
                 [sequelize.fn('SUM', sequelize.col('score')), 'totalScore'],
@@ -95,7 +98,7 @@ exports.getUserScore = async (req, res) => {
                         RANK() OVER (PARTITION BY es.stage_id ORDER BY es.score DESC, es.updated_time ASC) AS rank
                     FROM event_score es
                     JOIN event_stage s ON es.stage_id = s.id
-                    WHERE s.event_id = :event_id
+                    WHERE es.event_id = :event_id AND s.event_id = :event_id
                 ) t
             WHERE t.user_id = :user_id
             ORDER BY t.stage_id ASC;`,
@@ -113,7 +116,7 @@ exports.getUserScore = async (req, res) => {
                        RANK() OVER (ORDER BY SUM(es.score) DESC, MAX(es.updated_time) ASC) AS totalRank
                 FROM event_score es
                 JOIN event_stage s ON es.stage_id = s.id
-                WHERE s.event_id = :event_id
+                WHERE es.event_id = :event_id AND s.event_id = :event_id
                 GROUP BY es.user_id
             ) t
             WHERE user_id = :user_id`,

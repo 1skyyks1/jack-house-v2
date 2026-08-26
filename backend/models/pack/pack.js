@@ -75,6 +75,34 @@ const Pack = sequelize.define('Pack', {
         type: DataTypes.INTEGER,
         allowNull: true,
     },
+    is_recommended: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: '管理员推荐',
+    },
+    recommended_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    recommended_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    is_original: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: '叠屋出品',
+    },
+    original_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    original_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
     created_time: {
         type: DataTypes.DATE,
         defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),

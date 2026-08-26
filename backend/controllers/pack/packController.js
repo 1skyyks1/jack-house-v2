@@ -47,7 +47,7 @@ exports.createPack = async (req, res) => {
 
 // 获取图包列表（带筛选和分页）
 exports.getAllPacks = async (req, res) => {
-    const { page, pageSize, searchKeys, tags, type, graveyard, ranked, loved, sort } = req.query;
+    const { page, pageSize, searchKeys, tags, type, graveyard, ranked, loved, recommended, original, sort } = req.query;
     const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
     const limit = parseInt(pageSize, 10);
     const keyword = decodeURIComponent(searchKeys || '');
@@ -105,6 +105,14 @@ exports.getAllPacks = async (req, res) => {
             findOptions.where.status = { [Op.in]: statusArr };
         }
 
+        if (recommended === '1' || recommended === 'true') {
+            findOptions.where.is_recommended = true;
+        }
+
+        if (original === '1' || original === 'true') {
+            findOptions.where.is_original = true;
+        }
+
         if (tags) {
             const tagIdArray = Array.isArray(tags) ? tags.map(Number) : [Number(tags)];
             findOptions.include[0].where = { tag_id: { [Op.in]: tagIdArray } };
@@ -122,6 +130,64 @@ exports.getAllPacks = async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ message: req.t('pack.getListFailed') });
+    }
+};
+
+exports.updateRecommendation = async (req, res) => {
+    const recommended = req.body?.recommended;
+    if (typeof recommended !== 'boolean') {
+        return res.status(400).json({ message: req.t('pack.invalidRecommendation') });
+    }
+
+    try {
+        const pack = await Pack.findByPk(req.params.pack_id);
+        if (!pack) return res.status(404).json({ message: req.t('pack.notFound') });
+
+        await pack.update({
+            is_recommended: recommended,
+            recommended_at: recommended ? new Date() : null,
+            recommended_by: recommended ? req.user.user_id : null,
+        });
+        return res.status(200).json({
+            data: {
+                is_recommended: Boolean(pack.is_recommended),
+                recommended_at: pack.recommended_at,
+                recommended_by: pack.recommended_by,
+            },
+            message: req.t(recommended ? 'pack.recommendSuccess' : 'pack.unrecommendSuccess'),
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: req.t('pack.updateFailed') });
+    }
+};
+
+exports.updateOriginal = async (req, res) => {
+    const original = req.body?.original;
+    if (typeof original !== 'boolean') {
+        return res.status(400).json({ message: req.t('pack.invalidOriginal') });
+    }
+
+    try {
+        const pack = await Pack.findByPk(req.params.pack_id);
+        if (!pack) return res.status(404).json({ message: req.t('pack.notFound') });
+
+        await pack.update({
+            is_original: original,
+            original_at: original ? new Date() : null,
+            original_by: original ? req.user.user_id : null,
+        });
+        return res.status(200).json({
+            data: {
+                is_original: Boolean(pack.is_original),
+                original_at: pack.original_at,
+                original_by: pack.original_by,
+            },
+            message: req.t(original ? 'pack.originalSuccess' : 'pack.unoriginalSuccess'),
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: req.t('pack.updateFailed') });
     }
 };
 

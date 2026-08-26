@@ -95,9 +95,9 @@ Role.belongsToMany(User, {
 Event.hasMany(EventStage, { foreignKey: 'event_id', onDelete: 'CASCADE', as: 'stage' });
 
 EventStage.belongsTo(Event, { foreignKey: 'event_id', as: 'event' });
-EventStage.hasMany(EventScore, { foreignKey: 'stage_id', onDelete: 'CASCADE', as: 'score' });
+EventStage.hasMany(EventScore, { foreignKey: 'stage_id', onDelete: 'SET NULL', as: 'score' });
 
-EventScore.belongsTo(EventStage, { foreignKey: 'stage_id' , as: 'stage' });
+EventScore.belongsTo(EventStage, { foreignKey: 'stage_id', onDelete: 'SET NULL', as: 'stage' });
 EventScore.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 module.exports = {

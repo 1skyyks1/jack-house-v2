@@ -3,8 +3,17 @@ const router = express.Router();
 const PackController = require('../controllers/pack/packController');
 const OsuPackController = require('../controllers/osu/osuPackController');
 const PackFeedbackController = require('../controllers/pack/packFeedbackController');
+const PackScoreController = require('../controllers/pack/packScoreController');
 const checkAuth = require('../middleware/authMiddleware');
 const { ROLES } = require("../config/roles");
+const rateLimit = require('express-rate-limit');
+
+const osuScoreLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 80,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // 后台查看及处理图包反馈（需放在 /:pack_id 之前）
 router.get('/feedback', checkAuth([ROLES.ADMIN]), PackFeedbackController.getFeedbackList)
@@ -12,6 +21,18 @@ router.patch('/feedback/:feedback_id', checkAuth([ROLES.ADMIN]), PackFeedbackCon
 
 // 获取所有包
 router.get('/', PackController.getAllPacks)
+
+// 获取指定难度的永久排行榜
+router.get('/:pack_id/beatmap/:beatmap_id/leaderboard', checkAuth.optional, PackScoreController.getBeatmapLeaderboard)
+
+// 活动结束后录入指定难度的最近成绩
+router.post('/:pack_id/beatmap/:beatmap_id/score', osuScoreLimiter, checkAuth(), PackScoreController.submitBeatmapScore)
+
+// 管理员设置推荐
+router.patch('/:pack_id/recommendation', checkAuth([ROLES.ADMIN]), PackController.updateRecommendation)
+
+// 管理员设置叠屋出品
+router.patch('/:pack_id/original', checkAuth([ROLES.ADMIN]), PackController.updateOriginal)
 
 // 获取指定包信息
 router.get('/:pack_id', PackController.getPackById)

@@ -1,4 +1,4 @@
-const { User, Event, EventStage, EventScore } = require('../../models/index');
+const { User, Event, EventStage, EventScore, PackMap } = require('../../models/index');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 const fs = require('fs')
@@ -40,6 +40,11 @@ exports.getStages = async (req, res) => {
         let results = rows;
 
         if(rows.length > 0){
+            const packMaps = await PackMap.findAll({
+                where: { beatmap_id: { [Op.in]: rows.map((row) => row.map_id) } },
+                attributes: ['beatmap_id', 'pack_id'],
+            });
+            const packIdByBeatmapId = new Map(packMaps.map((map) => [Number(map.beatmap_id), map.pack_id]));
             results = await Promise.all(
                 rows.map(async (row) => {
                     const url = row.public_url || row.download_url || await storage.getDownloadUrl(EVENT_STAGE_BG_STORAGE_SCOPE, {
@@ -49,6 +54,7 @@ exports.getStages = async (req, res) => {
                     });
                     return {
                         ...row.toJSON(),
+                        pack_id: packIdByBeatmapId.get(Number(row.map_id)) ?? null,
                         url
                     }
                 })

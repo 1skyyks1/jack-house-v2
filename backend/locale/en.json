@@ -50,7 +50,17 @@
     "updateFailed": "Failed to update pack",
     "updateSuccess": "Pack updated successfully",
     "deleteSuccess": "Pack deleted successfully",
-    "deleteFailed": "Failed to delete pack"
+    "deleteFailed": "Failed to delete pack",
+    "beatmapNotFound": "The requested difficulty was not found in this pack",
+    "invalidRecommendation": "Invalid recommendation state",
+    "recommendSuccess": "Pack added to admin recommendations",
+    "unrecommendSuccess": "Pack removed from admin recommendations",
+    "invalidOriginal": "Invalid original status",
+    "originalSuccess": "Pack marked as a Jack House Original",
+    "unoriginalSuccess": "Jack House Original status removed",
+    "leaderboardUnavailable": "The persistent leaderboard is not available for this difficulty",
+    "submitFromEvent": "The event is active; submit scores from the event page",
+    "noRecentBeatmapScore": "No valid recent score was found for this difficulty"
   },
   "postComment": {
     "fetchFailed": "Failed to fetch comments",

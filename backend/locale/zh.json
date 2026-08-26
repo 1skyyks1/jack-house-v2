@@ -50,7 +50,17 @@
     "updateSuccess": "更新成功",
     "updateTooFrequent": "该图包今天已更新，请明天再试",
     "deleteSuccess": "图包删除成功",
-    "deleteFailed": "删除图包失败"
+    "deleteFailed": "删除图包失败",
+    "beatmapNotFound": "未找到该图包中的指定难度",
+    "invalidRecommendation": "推荐状态无效",
+    "recommendSuccess": "已设为管理员推荐",
+    "unrecommendSuccess": "已取消管理员推荐",
+    "invalidOriginal": "叠屋出品状态无效",
+    "originalSuccess": "已设为叠屋出品",
+    "unoriginalSuccess": "已取消叠屋出品",
+    "leaderboardUnavailable": "该难度尚未开放永久排行榜",
+    "submitFromEvent": "活动进行中，请从活动页面录入成绩",
+    "noRecentBeatmapScore": "最近成绩中没有找到该难度的有效成绩"
   },
   "postComment": {
     "fetchFailed": "获取评论失败",
