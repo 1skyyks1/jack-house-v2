@@ -13,7 +13,16 @@ const upstreamBeatmapLimiter = rateLimit({
     skip: (req) => maniaAnalyserController.isBeatmapCached(req.params.beatmapId),
     handler: (req, res) => res.status(429).json({ message: req.t('maniaAnalyser.rateLimited') }),
 });
+const publicBeatmapLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => maniaAnalyserController.isBeatmapCached(req.params.beatmapId),
+    handler: (req, res) => res.status(429).json({ message: req.t('maniaAnalyser.rateLimited') }),
+});
 
+router.get('/sources/:beatmapId', publicBeatmapLimiter, maniaAnalyserController.getPublicBeatmapSource);
 router.get('/beatmaps/:beatmapId', checkAuth(), upstreamBeatmapLimiter, maniaAnalyserController.getBeatmapSource);
 router.get('/covers/:beatmapsetId', checkAuth(), maniaAnalyserController.getBeatmapCover);
 

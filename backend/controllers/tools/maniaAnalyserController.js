@@ -2,7 +2,7 @@ const fetch = require('node-fetch');
 const osu = require('osu-api-v2-js');
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const CACHE_MAX_ENTRIES = 32;
+const CACHE_MAX_ENTRIES = 128;
 const MAX_BEATMAP_BYTES = 2 * 1024 * 1024;
 const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 10 * 1000;
@@ -13,69 +13,77 @@ exports.isBeatmapCached = (beatmapId) => {
     return Number.isSafeInteger(numericBeatmapId) && numericBeatmapId > 0 && Boolean(getCachedBeatmap(numericBeatmapId));
 };
 
-exports.getBeatmapSource = async (req, res) => {
+exports.getBeatmapSource = async (req, res) => handleBeatmapSource(req, res, { only4k: true });
+
+exports.getPublicBeatmapSource = async (req, res) => handleBeatmapSource(req, res, { only4k: false });
+
+async function handleBeatmapSource(req, res, { only4k }) {
     const beatmapId = Number(req.params.beatmapId);
     if (!Number.isSafeInteger(beatmapId) || beatmapId <= 0) {
         return res.status(400).json({ message: req.t('maniaAnalyser.invalidBeatmapId') });
     }
 
-    const cached = getCachedBeatmap(beatmapId);
-    if (cached) {
-        return res.json({ data: cached });
-    }
-
     try {
-        const clientId = Number(process.env.OSU_CLIENT_ID);
-        const clientSecret = process.env.OSU_CLIENT_SECRET;
-        if (!clientId || !clientSecret) {
-            throw createHttpError(503, 'osu! API credentials are not configured');
-        }
-
-        const api = await osu.API.createAsync(clientId, clientSecret);
-        const [beatmap, osuText] = await Promise.all([
-            api.getBeatmap(beatmapId),
-            fetchBeatmapText(beatmapId),
-        ]);
-
-        if (!beatmap) {
-            throw createHttpError(404, 'Beatmap not found');
-        }
-
-        const mode = String(beatmap.mode || '').toLowerCase();
-        if ((mode && mode !== 'mania') || !/^\s*Mode\s*:\s*3\s*$/m.test(osuText)) {
-            throw createHttpError(422, 'Beatmap is not osu!mania');
-        }
-        if (getKeyCount(beatmap, osuText) !== 4) {
+        const data = getCachedBeatmap(beatmapId) || await loadBeatmapSource(beatmapId);
+        if (only4k && data.beatmap.keyCount !== 4) {
             throw createHttpError(422, 'Only 4K beatmaps are supported', 'ONLY_4K');
         }
-
-        const beatmapsetId = finiteNumberOrNull(beatmap.beatmapset_id ?? beatmap.beatmapset?.id);
-        const covers = beatmap.beatmapset?.covers || {};
-        const data = {
-            beatmap: {
-                artist: String(beatmap.beatmapset?.artist || ''),
-                beatmapId,
-                beatmapsetId,
-                bpm: finiteNumberOrNull(beatmap.bpm),
-                coverUrl: covers['cover@2x'] || covers.cover || buildCoverUrl(beatmapsetId),
-                creator: String(beatmap.beatmapset?.creator || ''),
-                difficultyRating: finiteNumberOrNull(beatmap.difficulty_rating),
-                mode: mode || 'mania',
-                title: String(beatmap.beatmapset?.title || ''),
-                totalLength: finiteNumberOrNull(beatmap.total_length),
-                version: String(beatmap.version || ''),
-            },
-            osuText,
-        };
-
-        cacheBeatmap(beatmapId, data);
         return res.json({ data });
     } catch (error) {
         const status = resolveErrorStatus(error);
         if (status >= 500) console.error('Failed to load beatmap for mania analyser:', error);
         return res.status(status).json({ message: translateError(req, status, error?.code) });
     }
-};
+}
+
+async function loadBeatmapSource(beatmapId) {
+    const clientId = Number(process.env.OSU_CLIENT_ID);
+    const clientSecret = process.env.OSU_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        throw createHttpError(503, 'osu! API credentials are not configured');
+    }
+
+    const api = await osu.API.createAsync(clientId, clientSecret);
+    const [beatmap, osuText] = await Promise.all([
+        api.getBeatmap(beatmapId),
+        fetchBeatmapText(beatmapId),
+    ]);
+
+    if (!beatmap) throw createHttpError(404, 'Beatmap not found');
+
+    const mode = String(beatmap.mode || '').toLowerCase();
+    if ((mode && mode !== 'mania') || !/^\s*Mode\s*:\s*3\s*$/m.test(osuText)) {
+        throw createHttpError(422, 'Beatmap is not osu!mania');
+    }
+
+    const keyCount = getKeyCount(beatmap, osuText);
+    if (!Number.isInteger(keyCount) || keyCount < 1 || keyCount > 18) {
+        throw createHttpError(422, 'Beatmap has an invalid key count');
+    }
+
+    const beatmapsetId = finiteNumberOrNull(beatmap.beatmapset_id ?? beatmap.beatmapset?.id);
+    const covers = beatmap.beatmapset?.covers || {};
+    const data = {
+        beatmap: {
+            artist: String(beatmap.beatmapset?.artist || ''),
+            beatmapId,
+            beatmapsetId,
+            bpm: finiteNumberOrNull(beatmap.bpm),
+            coverUrl: covers['cover@2x'] || covers.cover || buildCoverUrl(beatmapsetId),
+            creator: String(beatmap.beatmapset?.creator || ''),
+            difficultyRating: finiteNumberOrNull(beatmap.difficulty_rating),
+            keyCount,
+            mode: mode || 'mania',
+            title: String(beatmap.beatmapset?.title || ''),
+            totalLength: finiteNumberOrNull(beatmap.total_length),
+            version: String(beatmap.version || ''),
+        },
+        osuText,
+    };
+
+    cacheBeatmap(beatmapId, data);
+    return data;
+}
 
 exports.getBeatmapCover = async (req, res) => {
     const beatmapsetId = Number(req.params.beatmapsetId);
