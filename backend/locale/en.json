@@ -53,14 +53,18 @@
     "deleteFailed": "Failed to delete pack",
     "beatmapNotFound": "The requested difficulty was not found in this pack",
     "invalidRecommendation": "Invalid recommendation state",
-    "recommendSuccess": "Pack added to admin recommendations",
-    "unrecommendSuccess": "Pack removed from admin recommendations",
+    "recommendSuccess": "Pack added to Picks",
+    "unrecommendSuccess": "Pack removed from Picks",
     "invalidOriginal": "Invalid original status",
     "originalSuccess": "Pack marked as a Jack House Original",
     "unoriginalSuccess": "Jack House Original status removed",
-    "leaderboardUnavailable": "The persistent leaderboard is not available for this difficulty",
+    "leaderboardUnavailable": "The Featured leaderboard is not available for this pack or beatmap",
     "submitFromEvent": "The event is active; submit scores from the event page",
-    "noRecentBeatmapScore": "No valid recent score was found for this difficulty"
+    "noRecentBeatmapScore": "No valid recent score was found for this difficulty",
+    "invalidLeaderboardState": "Invalid Featured state",
+    "leaderboardEnabled": "The pack was marked as Featured and its leaderboard was enabled",
+    "leaderboardDisabled": "The pack's Featured status and leaderboard were disabled",
+    "syncScoresSuccess": "Scores from the last 24 hours have been synced"
   },
   "postComment": {
     "fetchFailed": "Failed to fetch comments",
@@ -178,6 +182,11 @@
     "deleteSuccess": "Stage deleted successfully",
     "missingRequiredFields": "Missing required fields",
     "fileError": "File error",
+    "invalidBeatmapsetId": "Invalid beatmapset ID",
+    "beatmapsetNotFound": "Beatmapset not found",
+    "beatmapsetNoBeatmaps": "This beatmapset has no importable difficulties",
+    "beatmapsetImportFailed": "Failed to import beatmapset from osu!",
+    "osuUnavailable": "osu! API is unavailable",
     "serverError": "Internal server error"
   },
   "score": {

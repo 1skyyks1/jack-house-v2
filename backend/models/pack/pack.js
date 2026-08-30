@@ -103,6 +103,20 @@ const Pack = sequelize.define('Pack', {
         type: DataTypes.INTEGER,
         allowNull: true,
     },
+    leaderboard_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: '启用站内Pack排行榜',
+    },
+    leaderboard_enabled_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    leaderboard_enabled_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
     created_time: {
         type: DataTypes.DATE,
         defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
@@ -118,6 +132,9 @@ const Pack = sequelize.define('Pack', {
     timestamps: true,
     createdAt: 'created_time',
     updatedAt: 'updated_time',
+    indexes: [
+        { fields: ['leaderboard_enabled'], name: 'idx_pack_leaderboard_enabled' },
+    ],
 });
 
 module.exports = Pack;

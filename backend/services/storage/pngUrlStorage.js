@@ -3,7 +3,7 @@ const FormData = require('form-data');
 const fetch = require('node-fetch');
 
 const DEFAULT_API_BASE_URL = 'https://pngurl.com/api/v1';
-const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 
 const positiveInteger = (value, fallback) => {
     const parsed = Number(value);

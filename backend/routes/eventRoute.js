@@ -14,6 +14,12 @@ const osuLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+const beatmapsetImportLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // 获取活动列表，isActive=true筛选出正在进行的
 router.get('/', EventController.getEvents);
@@ -35,6 +41,9 @@ router.get('/:event_id/stage', EventStageController.getStages);
 
 // 创建项目
 router.post('/stage', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.createStage);
+
+// 从 osu! beatmapset 读取所有难度，生成待提交的 Stage 草稿
+router.get('/stage/import/:beatmapset_id', beatmapsetImportLimiter, checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.importBeatmapset);
 
 // 修改项目
 router.put('/stage/:stage_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.updateStage);

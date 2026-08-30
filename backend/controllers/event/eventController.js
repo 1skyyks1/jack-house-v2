@@ -95,15 +95,10 @@ exports.createEvent = async (req, res) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    const now = new Date();
 
-    if(startDate >= endDate) {
+    if(Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate >= endDate) {
         // 结束时间必须要晚于开始时间
         return res.status(400).json({ message: req.t('event.startAfterEnd') });
-    }
-    if(startDate < now || endDate < now) {
-        // 已经开始了和已经结束了
-        return res.status(400).json({ message: req.t('event.alreadyStartedOrEnded') });
     }
 
     try {
@@ -167,7 +162,7 @@ exports.updateEvent = async (req, res) => {
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    if(startDate >= endDate) {
+    if(Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate >= endDate) {
         // 结束时间必须要晚于开始时间
         return res.status(400).json({ message: req.t('event.startAfterEnd') });
     }

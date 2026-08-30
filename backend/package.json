@@ -10,6 +10,7 @@
     "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
     "migrate:pack-map-beatmap-id": "node scripts/migrate-pack-map-beatmap-id.js",
     "migrate:pack-rankings": "node scripts/migrate-pack-rankings.js",
+    "migrate:pack-rank-system": "node scripts/migrate-pack-rank-system.js",
     "migrate:event-score-details": "node scripts/migrate-event-score-details.js",
     "migrate:pack-originals": "node scripts/migrate-pack-originals.js",
     "migrate:pack-feedback": "node scripts/migrate-pack-feedback.js",

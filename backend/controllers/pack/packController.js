@@ -2,6 +2,7 @@ const { Pack, Tag, User, PackMap, PackComment, PackFeedback } = require('../../m
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 const { validatePackTagSelection } = require('../../services/packTagService');
+const { backfillPackScoresFromEvents } = require('../../services/packRankService');
 
 // 创建新图包（非osu）
 exports.createPack = async (req, res) => {
@@ -47,7 +48,7 @@ exports.createPack = async (req, res) => {
 
 // 获取图包列表（带筛选和分页）
 exports.getAllPacks = async (req, res) => {
-    const { page, pageSize, searchKeys, tags, type, graveyard, ranked, loved, recommended, original, sort } = req.query;
+    const { page, pageSize, searchKeys, tags, type, graveyard, ranked, featured, loved, recommended, original, sort } = req.query;
     const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
     const limit = parseInt(pageSize, 10);
     const keyword = decodeURIComponent(searchKeys || '');
@@ -111,6 +112,10 @@ exports.getAllPacks = async (req, res) => {
 
         if (original === '1' || original === 'true') {
             findOptions.where.is_original = true;
+        }
+
+        if (featured === '1' || featured === 'true') {
+            findOptions.where.leaderboard_enabled = true;
         }
 
         if (tags) {
@@ -184,6 +189,46 @@ exports.updateOriginal = async (req, res) => {
                 original_by: pack.original_by,
             },
             message: req.t(original ? 'pack.originalSuccess' : 'pack.unoriginalSuccess'),
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: req.t('pack.updateFailed') });
+    }
+};
+
+exports.updateLeaderboard = async (req, res) => {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: req.t('pack.invalidLeaderboardState') });
+    }
+
+    try {
+        let pack;
+        await sequelize.transaction(async (transaction) => {
+            pack = await Pack.findByPk(req.params.pack_id, {
+                lock: transaction.LOCK.UPDATE,
+                transaction,
+            });
+            if (!pack) return;
+
+            if (enabled) {
+                await backfillPackScoresFromEvents(pack.pack_id, { transaction });
+            }
+            await pack.update({
+                leaderboard_enabled: enabled,
+                leaderboard_enabled_at: enabled ? new Date() : null,
+                leaderboard_enabled_by: enabled ? req.user.user_id : null,
+            }, { transaction });
+        });
+        if (!pack) return res.status(404).json({ message: req.t('pack.notFound') });
+
+        return res.status(200).json({
+            data: {
+                leaderboard_enabled: Boolean(pack.leaderboard_enabled),
+                leaderboard_enabled_at: pack.leaderboard_enabled_at,
+                leaderboard_enabled_by: pack.leaderboard_enabled_by,
+            },
+            message: req.t(enabled ? 'pack.leaderboardEnabled' : 'pack.leaderboardDisabled'),
         });
     } catch (error) {
         console.error(error);

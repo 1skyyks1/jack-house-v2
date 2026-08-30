@@ -22,17 +22,23 @@ router.patch('/feedback/:feedback_id', checkAuth([ROLES.ADMIN]), PackFeedbackCon
 // 获取所有包
 router.get('/', PackController.getAllPacks)
 
+// 同步近24小时内属于所有精选图包的成绩（需放在 /:pack_id 之前）
+router.post('/featured/scores/sync', osuScoreLimiter, checkAuth(), PackScoreController.syncAllFeaturedScores)
+
 // 获取指定难度的永久排行榜
 router.get('/:pack_id/beatmap/:beatmap_id/leaderboard', checkAuth.optional, PackScoreController.getBeatmapLeaderboard)
 
-// 活动结束后录入指定难度的最近成绩
-router.post('/:pack_id/beatmap/:beatmap_id/score', osuScoreLimiter, checkAuth(), PackScoreController.submitBeatmapScore)
+// 将近24小时内属于该图包的成绩同步到整包排行榜
+router.post('/:pack_id/scores/sync', osuScoreLimiter, checkAuth(), PackScoreController.syncPackScores)
 
 // 管理员设置推荐
 router.patch('/:pack_id/recommendation', checkAuth([ROLES.ADMIN]), PackController.updateRecommendation)
 
 // 管理员设置叠屋出品
 router.patch('/:pack_id/original', checkAuth([ROLES.ADMIN]), PackController.updateOriginal)
+
+// 管理员设置整包Rank
+router.patch('/:pack_id/leaderboard', checkAuth([ROLES.ADMIN]), PackController.updateLeaderboard)
 
 // 获取指定包信息
 router.get('/:pack_id', PackController.getPackById)

@@ -1,17 +1,21 @@
 const assert = require('node:assert/strict');
 const { afterEach, test } = require('node:test');
 
-const { EventScore } = require('../models');
+const { EventScore, PackScore } = require('../models');
 const {
+    calculateManiaAccuracyAndRank,
     getBestScoresByBeatmap,
     getScoreDetails,
     upsertBestScore,
+    upsertBestPackScore,
 } = require('../services/beatmapScoreService');
 
 const originalFindOrCreate = EventScore.findOrCreate;
+const originalPackFindOrCreate = PackScore.findOrCreate;
 
 afterEach(() => {
     EventScore.findOrCreate = originalFindOrCreate;
+    PackScore.findOrCreate = originalPackFindOrCreate;
 });
 
 test('best score selection keeps only the highest recent score for each requested beatmap', () => {
@@ -32,12 +36,12 @@ test('best score selection keeps only the highest recent score for each requeste
 
 test('lazer scores use total_score and retain their detailed score snapshot', () => {
     const raw = {
-        accuracy: 0.987654,
+        accuracy: 0,
         build_id: 20260826,
         legacy_total_score: 0,
         max_combo: 1234,
         mods: [{ acronym: 'DT', settings: { speed_change: 1.2 } }],
-        rank: 'S',
+        rank: 'D',
         statistics: { perfect: 500, great: 20, good: 3, ok: 2, meh: 1, miss: 0 },
         total_score: 987654,
     };
@@ -45,13 +49,30 @@ test('lazer scores use total_score and retain their detailed score snapshot', ()
     const best = getBestScoresByBeatmap([{ ...raw, beatmap_id: 22 }], [22]);
     assert.equal(best.get(22).scoreValue, 987654);
     assert.deepEqual(getScoreDetails(raw), {
-        accuracy: 0.987654,
+        accuracy: (500 * 320 + 20 * 300 + 3 * 200 + 2 * 100 + 1 * 50) / (526 * 320),
         build_id: 20260826,
         max_combo: 1234,
         mods: [{ acronym: 'DT', settings: { speed_change: 1.2 } }],
         score_rank: 'S',
         statistics: { perfect: 500, great: 20, good: 3, ok: 2, meh: 1, miss: 0 },
     });
+});
+
+test('classic mania accuracy and rank are calculated from judgements when osu returns zero and D', () => {
+    const result = calculateManiaAccuracyAndRank(
+        { perfect: 955, great: 595, good: 202, ok: 22, meh: 1, miss: 49 },
+        [{ acronym: 'CL' }]
+    );
+
+    assert.ok(Math.abs(result.accuracy - 0.9277229532163743) < Number.EPSILON);
+    assert.equal(result.rank, 'A');
+});
+
+test('classic and lazer mania grades use their respective boundary rules', () => {
+    assert.equal(calculateManiaAccuracyAndRank({ great: 95, miss: 5 }, [{ acronym: 'CL' }]).rank, 'A');
+    assert.equal(calculateManiaAccuracyAndRank({ perfect: 95, miss: 5 }).rank, 'S');
+    assert.equal(calculateManiaAccuracyAndRank({ perfect: 1, great: 99 }).rank, 'X');
+    assert.equal(calculateManiaAccuracyAndRank({ perfect: 99, great: 1 }, [{ acronym: 'CL' }]).rank, 'X');
 });
 
 test('post-event import writes the independent event_id 0 scope', async () => {
@@ -90,13 +111,13 @@ test('new records persist score details together with the score', async () => {
         eventId: 0,
         score: {
             raw: {
-                accuracy: 0.99,
+                accuracy: 0,
                 build_id: 123,
                 id: 456,
                 max_combo: 1000,
                 mods: [{ acronym: 'HD' }],
-                rank: 'S',
-                statistics: { perfect: 100, miss: 1 },
+                rank: 'D',
+                statistics: { perfect: 99, great: 1 },
             },
             scoreValue: 990000,
         },
@@ -104,12 +125,12 @@ test('new records persist score details together with the score', async () => {
         userId: 7,
     });
 
-    assert.equal(defaults.accuracy, 0.99);
+    assert.equal(defaults.accuracy, (99 * 320 + 300) / (100 * 320));
     assert.equal(defaults.build_id, 123);
     assert.equal(defaults.max_combo, 1000);
-    assert.equal(defaults.score_rank, 'S');
+    assert.equal(defaults.score_rank, 'XH');
     assert.deepEqual(defaults.mods, [{ acronym: 'HD' }]);
-    assert.deepEqual(defaults.statistics, { perfect: 100, miss: 1 });
+    assert.deepEqual(defaults.statistics, { perfect: 99, great: 1 });
 });
 
 test('same event scope updates only when the imported score is higher', async () => {
@@ -141,4 +162,54 @@ test('same event scope updates only when the imported score is higher', async ()
     assert.equal(updates.length, 1);
     assert.equal(updates[0].score, 950000);
     assert.equal(updates[0].stage_id, 3);
+});
+
+test('pack score scope is independent per pack and beatmap', async () => {
+    let receivedOptions;
+    PackScore.findOrCreate = async (options) => {
+        receivedOptions = options;
+        return [{ score: options.defaults.score }, true];
+    };
+
+    const result = await upsertBestPackScore({
+        beatmapId: 22,
+        packId: 842,
+        score: { raw: { id: 126 }, scoreValue: 975000 },
+        userId: 7,
+    });
+
+    assert.equal(result.created, true);
+    assert.equal(result.updated, true);
+    assert.deepEqual(receivedOptions.where, {
+        beatmap_id: 22,
+        pack_id: 842,
+        user_id: 7,
+    });
+});
+
+test('pack score keeps the existing record when the imported score is not higher', async () => {
+    const updates = [];
+    const record = {
+        score: 900000,
+        update: async (values) => updates.push(values),
+    };
+    PackScore.findOrCreate = async () => [record, false];
+
+    const equal = await upsertBestPackScore({
+        beatmapId: 22,
+        packId: 842,
+        score: { raw: { id: 127 }, scoreValue: 900000 },
+        userId: 7,
+    });
+    const higher = await upsertBestPackScore({
+        beatmapId: 22,
+        packId: 842,
+        score: { raw: { id: 128 }, scoreValue: 950000 },
+        userId: 7,
+    });
+
+    assert.equal(equal.updated, false);
+    assert.equal(higher.updated, true);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].score, 950000);
 });

@@ -6,6 +6,8 @@ const { eventStageBgUpload } = require('../../config/multer')
 const { handleUpload } = require('../../middleware/uploadErrorHandler')
 const storage = require('../../services/storage')
 const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer')
+const osu = require('osu-api-v2-js');
+const { buildImportedStages } = require('../../utils/eventStageImport');
 
 const EVENT_STAGE_BG_STORAGE_SCOPE = 'EVENT_STAGE_BG';
 const getEventStageBgUploadProvider = () => process.env.EVENT_STAGE_BG_UPLOAD_PROVIDER || 'pngurl';
@@ -25,6 +27,39 @@ const removeTempFiles = (files = []) => {
             fs.unlinkSync(file.path);
         }
     });
+};
+
+// 读取 beatmapset 的全部原生难度，供前端生成尚未提交的 Stage 草稿。
+exports.importBeatmapset = async (req, res) => {
+    const beatmapsetId = Number(req.params.beatmapset_id);
+    if (!Number.isSafeInteger(beatmapsetId) || beatmapsetId <= 0) {
+        return res.status(400).json({ message: req.t('stage.invalidBeatmapsetId') });
+    }
+
+    const clientId = Number(process.env.OSU_CLIENT_ID);
+    const clientSecret = process.env.OSU_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        return res.status(503).json({ message: req.t('stage.osuUnavailable') });
+    }
+
+    try {
+        const api = await osu.API.createAsync(clientId, clientSecret);
+        const beatmapset = await api.getBeatmapset(beatmapsetId);
+        const stages = buildImportedStages(beatmapset?.beatmaps);
+
+        if (stages.length === 0) {
+            return res.status(422).json({ message: req.t('stage.beatmapsetNoBeatmaps') });
+        }
+
+        return res.status(200).json({ data: stages });
+    } catch (error) {
+        const status = Number(error?.status ?? error?.response?.status);
+        if (status === 404) {
+            return res.status(404).json({ message: req.t('stage.beatmapsetNotFound') });
+        }
+        console.error('Failed to import event stages from osu! beatmapset:', error);
+        return res.status(502).json({ message: req.t('stage.beatmapsetImportFailed') });
+    }
 };
 
 // 获取指定活动的项目

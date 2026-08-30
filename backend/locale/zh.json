@@ -53,14 +53,18 @@
     "deleteFailed": "删除图包失败",
     "beatmapNotFound": "未找到该图包中的指定难度",
     "invalidRecommendation": "推荐状态无效",
-    "recommendSuccess": "已设为管理员推荐",
-    "unrecommendSuccess": "已取消管理员推荐",
+    "recommendSuccess": "已设为推荐",
+    "unrecommendSuccess": "已取消推荐",
     "invalidOriginal": "叠屋出品状态无效",
     "originalSuccess": "已设为叠屋出品",
     "unoriginalSuccess": "已取消叠屋出品",
-    "leaderboardUnavailable": "该难度尚未开放永久排行榜",
+    "leaderboardUnavailable": "该图包或谱面未开放精选排行榜",
     "submitFromEvent": "活动进行中，请从活动页面录入成绩",
-    "noRecentBeatmapScore": "最近成绩中没有找到该难度的有效成绩"
+    "noRecentBeatmapScore": "最近成绩中没有找到该难度的有效成绩",
+    "invalidLeaderboardState": "精选状态无效",
+    "leaderboardEnabled": "已将该图包设为精选并启用排行榜",
+    "leaderboardDisabled": "已取消精选并停用排行榜",
+    "syncScoresSuccess": "近24小时成绩同步完成"
   },
   "postComment": {
     "fetchFailed": "获取评论失败",
@@ -178,6 +182,11 @@
     "deleteSuccess": "Stage 删除成功",
     "missingRequiredFields": "缺少必填信息",
     "fileError": "文件错误",
+    "invalidBeatmapsetId": "Beatmapset ID 无效",
+    "beatmapsetNotFound": "Beatmapset 不存在",
+    "beatmapsetNoBeatmaps": "该 Beatmapset 没有可导入的难度",
+    "beatmapsetImportFailed": "无法从 osu! 导入 Beatmapset",
+    "osuUnavailable": "osu! API 暂不可用",
     "serverError": "服务器内部错误"
   },
   "score": {

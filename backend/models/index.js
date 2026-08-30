@@ -8,6 +8,7 @@ const PackMap = require('./pack/packMap');
 const Tag = require('./pack/tag');
 const PackComment = require('./pack/packComment');
 const PackFeedback = require('./pack/packFeedback');
+const PackScore = require('./pack/packScore');
 const Badge = require('./user/badge');
 const Role = require('./user/role');
 const RichTextAsset = require('./richTextAsset');
@@ -38,6 +39,7 @@ User.hasMany(PostFile, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(PostComment, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 User.hasMany(Pack, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(EventScore, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+User.hasMany(PackScore, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.belongsToMany(Badge, {
     through: 'user_badges',
     foreignKey: 'user_id',
@@ -61,8 +63,12 @@ Pack.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Pack.hasMany(PackComment, { foreignKey: 'pack_id' });
 Pack.hasMany(PackMap, { foreignKey: 'pack_id', as: 'maps' });
 Pack.hasMany(PackFeedback, { foreignKey: 'pack_id', onDelete: 'CASCADE', as: 'feedback' });
+Pack.hasMany(PackScore, { foreignKey: 'pack_id', onDelete: 'CASCADE', as: 'scores' });
 
 PackMap.belongsTo(Pack, { foreignKey: 'pack_id' });
+
+PackScore.belongsTo(Pack, { foreignKey: 'pack_id', as: 'pack' });
+PackScore.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 Tag.belongsToMany(Pack, {
     through: 'pack_tags',
@@ -112,6 +118,7 @@ module.exports = {
     Tag,
     PackComment,
     PackFeedback,
+    PackScore,
     Event,
     EventStage,
     EventScore,
