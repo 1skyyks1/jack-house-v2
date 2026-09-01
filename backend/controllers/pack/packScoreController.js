@@ -101,9 +101,12 @@ const syncScorePairs = async ({ pairs, scores, userId }) => {
     return summary;
 };
 
-const fetchLast24Hours = async (user) => fetchRecentManiaScoresSince(
+const fetchLast24Hours = async (user, source) => fetchRecentManiaScoresSince(
     user,
-    new Date(Date.now() - RECENT_SCORE_WINDOW_MS)
+    new Date(Date.now() - RECENT_SCORE_WINDOW_MS),
+    100,
+    20,
+    { source }
 );
 
 exports.getBeatmapLeaderboard = async (req, res) => {
@@ -197,7 +200,7 @@ exports.syncPackScores = async (req, res) => {
         }
 
         const user = await User.findByPk(userId);
-        const scores = await fetchLast24Hours(user);
+        const scores = await fetchLast24Hours(user, 'pack_score_sync');
         const pairs = (pack.maps || [])
             .filter(isPackRankEligibleMap)
             .map((map) => ({ packId, beatmapId: Number(map.beatmap_id) }));
@@ -229,7 +232,7 @@ exports.syncAllFeaturedScores = async (req, res) => {
         }
 
         const user = await User.findByPk(userId);
-        const scores = await fetchLast24Hours(user);
+        const scores = await fetchLast24Hours(user, 'featured_score_sync');
         const summary = await syncScorePairs({ pairs, scores, userId });
         return res.status(200).json({ data: summary, message: req.t('pack.syncScoresSuccess') });
     } catch (error) {

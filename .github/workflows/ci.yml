@@ -33,10 +33,12 @@ jobs:
           pnpm --dir jack-house-analytics --filter @jack-house-analytics/server-core pack --pack-destination "$GITHUB_WORKSPACE/.packed/jack-house-analytics"
           pnpm --dir jack-house-analytics --filter @jack-house-analytics/server-express pack --pack-destination "$GITHUB_WORKSPACE/.packed/jack-house-analytics"
       - name: Install backend
-        # Refresh only the analytics tarballs built above, then keep the actual
-        # installation deterministic with npm ci.
+        # Refresh only the two local tarballs by file path. Passing package names
+        # here would make npm query the public registry for unpublished packages.
         run: |
-          npm update @jack-house-analytics/server-core @jack-house-analytics/server-express --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
+            ../../.packed/jack-house-analytics/jack-house-analytics-server-core-0.1.2.tgz \
+            ../../.packed/jack-house-analytics/jack-house-analytics-server-express-0.1.2.tgz
           npm ci
         working-directory: jack-house-web/backend
       - name: Test backend

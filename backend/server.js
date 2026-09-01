@@ -20,6 +20,8 @@ const morgan = require('morgan');
 const cors = require('cors');
 const mariadb = require('mariadb');
 const { createAnalyticsRouter, MariaDbAnalyticsStorage } = require('@jack-house-analytics/server-express');
+const { configureAnalytics } = require('./services/analyticsService');
+const DashboardController = require('./controllers/dashboardController');
 const i18next = require('i18next');
 const Backend = require('i18next-fs-backend');
 const i18nextMiddleware = require('i18next-http-middleware');
@@ -104,7 +106,7 @@ app.use(cors({
 // API限流
 const commonLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15分钟
-    max: 200, // 每个IP允许的请求数
+    max: 600, // 每个IP允许的请求数
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -130,6 +132,11 @@ if (analyticsEnabled) {
         connectionLimit: Number(process.env.ANALYTICS_DB_CONNECTION_LIMIT || 5),
     });
     const analyticsStorage = new MariaDbAnalyticsStorage(analyticsPool);
+    configureAnalytics({ appId: analyticsApps[0], storage: analyticsStorage });
+    DashboardController.configureBusinessAnalytics({
+        appId: analyticsApps[0],
+        pool: analyticsPool,
+    });
     const pageViewAnalyticsStorage = {
         insertEvents: (events) => analyticsStorage.insertEvents(
             events.filter((event) => event.eventType === 'page_start'),

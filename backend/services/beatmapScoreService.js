@@ -1,5 +1,6 @@
 const osu = require('osu-api-v2-js');
 const { EventScore, PackScore } = require('../models');
+const { trackOsuApiRequest } = require('./analyticsService');
 
 const CLIENT_ID = Number(process.env.OSU_CLIENT_ID);
 const CLIENT_SECRET = process.env.OSU_CLIENT_SECRET;
@@ -108,16 +109,28 @@ const fetchRecentManiaScores = async (user, limit = 50) => {
     );
 };
 
-const fetchRecentManiaScoresSince = async (user, since, pageSize = 100, maxPages = 20) => {
+const fetchRecentManiaScoresSince = async (user, since, pageSize = 100, maxPages = 20, options = {}) => {
     if (!user?.osu_uid) return [];
     const sinceTime = since instanceof Date ? since.getTime() : new Date(since).getTime();
     if (!Number.isFinite(sinceTime)) throw new TypeError('A valid since date is required');
 
     const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET);
+    trackOsuApiRequest({
+        operation: 'get_user',
+        resourceId: user.osu_uid,
+        source: options.source || 'pack_score_sync',
+        userId: user.user_id,
+    });
     const osuUser = await api.getUser(Number(user.osu_uid));
     const collected = [];
 
     for (let page = 0; page < maxPages; page += 1) {
+        trackOsuApiRequest({
+            operation: 'get_user_scores',
+            resourceId: user.osu_uid,
+            source: options.source || 'pack_score_sync',
+            userId: user.user_id,
+        });
         const scores = await api.getUserScores(
             osuUser,
             'recent',

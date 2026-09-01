@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const osu = require('osu-api-v2-js');
+const { trackOsuApiRequest } = require('../../services/analyticsService');
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 128;
@@ -24,7 +25,8 @@ async function handleBeatmapSource(req, res, { only4k }) {
     }
 
     try {
-        const data = getCachedBeatmap(beatmapId) || await loadBeatmapSource(beatmapId);
+        const data = getCachedBeatmap(beatmapId)
+            || await loadBeatmapSource(beatmapId, req.user?.user_id ?? req.analyticsUserId);
         if (only4k && data.beatmap.keyCount !== 4) {
             throw createHttpError(422, 'Only 4K beatmaps are supported', 'ONLY_4K');
         }
@@ -36,7 +38,7 @@ async function handleBeatmapSource(req, res, { only4k }) {
     }
 }
 
-async function loadBeatmapSource(beatmapId) {
+async function loadBeatmapSource(beatmapId, userId) {
     const clientId = Number(process.env.OSU_CLIENT_ID);
     const clientSecret = process.env.OSU_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
@@ -44,6 +46,12 @@ async function loadBeatmapSource(beatmapId) {
     }
 
     const api = await osu.API.createAsync(clientId, clientSecret);
+    trackOsuApiRequest({
+        operation: 'get_beatmap',
+        resourceId: beatmapId,
+        source: 'beatmap_preview',
+        userId,
+    });
     const [beatmap, osuText] = await Promise.all([
         api.getBeatmap(beatmapId),
         fetchBeatmapText(beatmapId),
