@@ -113,7 +113,11 @@ test('osu authorization-code login keeps the createAsync argument and token cont
         let body = '';
         req.on('data', (chunk) => { body += chunk; });
         req.on('end', () => {
-            requests.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : null });
+            requests.push({
+                method: req.method,
+                url: new URL(req.url, 'http://localhost').pathname,
+                body: body ? JSON.parse(body) : null,
+            });
             res.setHeader('Content-Type', 'application/json');
             if (req.url.startsWith('/oauth/token')) {
                 return res.end(JSON.stringify({

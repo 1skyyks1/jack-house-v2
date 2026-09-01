@@ -1,11 +1,11 @@
-const mc = require('../../config/minio');
+const getClient = () => require('../../config/minio');
 
 const getDownloadUrl = async ({ bucket, objectName, expires = 24 * 60 * 60 }) => {
-    return mc.presignedUrl('GET', bucket, objectName, expires);
+    return getClient().presignedUrl('GET', bucket, objectName, expires);
 };
 
 const deleteFile = async ({ bucket, objectName }) => {
-    return mc.removeObject(bucket, objectName);
+    return getClient().removeObject(bucket, objectName);
 };
 
 module.exports = {
