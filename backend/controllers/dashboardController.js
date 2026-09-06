@@ -69,7 +69,7 @@ exports.businessAnalytics = async (req, res) => {
     const { appId, pool } = businessAnalytics;
 
     try {
-        const [userRows, trendRows, packRows] = await Promise.all([
+        const [userRows, userSourceRows, trendRows, packRows] = await Promise.all([
             pool.query(`
                 SELECT user_id, COUNT(*) AS requests
                 FROM analytics_events
@@ -78,6 +78,18 @@ exports.businessAnalytics = async (req, res) => {
                 GROUP BY user_id
                 ORDER BY requests DESC
                 LIMIT 10
+            `, [appId, cutoff]),
+            pool.query(`
+                SELECT user_id,
+                       COALESCE(
+                           JSON_UNQUOTE(JSON_EXTRACT(payload, '$.properties.source')),
+                           'unknown'
+                       ) AS source,
+                       COUNT(*) AS requests
+                FROM analytics_events
+                WHERE app_id = ? AND event_type = 'osu_api_request'
+                  AND event_time >= ? AND user_id IS NOT NULL
+                GROUP BY user_id, source
             `, [appId, cutoff]),
             pool.query(`
                 SELECT ${hours <= 48
@@ -115,6 +127,17 @@ exports.businessAnalytics = async (req, res) => {
         ]);
         const usersById = new Map(users.map((user) => [Number(user.user_id), user]));
         const packsById = new Map(packs.map((pack) => [Number(pack.pack_id), pack]));
+        const sourcesByUserId = new Map();
+        for (const row of userSourceRows) {
+            const userId = Number(row.user_id);
+            if (!userIds.includes(userId)) continue;
+            const sources = sourcesByUserId.get(userId) || [];
+            sources.push({
+                requests: Number(row.requests || 0),
+                source: String(row.source || 'unknown'),
+            });
+            sourcesByUserId.set(userId, sources);
+        }
 
         return res.status(200).json({
             hours,
@@ -131,6 +154,8 @@ exports.businessAnalytics = async (req, res) => {
                     return {
                         avatar: user?.avatar || null,
                         requests: Number(row.requests || 0),
+                        sources: (sourcesByUserId.get(userId) || [])
+                            .sort((left, right) => right.requests - left.requests),
                         userId,
                         userName: user?.user_name || `#${userId}`,
                     };
