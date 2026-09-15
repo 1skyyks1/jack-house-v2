@@ -23,7 +23,7 @@ exports.createFeedback = async (req, res) => {
     }
 
     try {
-        const pack = await Pack.findByPk(packId, { attributes: ['pack_id'] });
+        const pack = await Pack.findByPk(packId, { attributes: ['pack_id', 'title'] });
         if (!pack) {
             return res.status(404).json({ message: req.t('pack.notFound') });
         }
@@ -37,6 +37,7 @@ exports.createFeedback = async (req, res) => {
 
         const feedback = await PackFeedback.create({
             pack_id: packId,
+            pack_title_snapshot: pack.title,
             user_id: userId,
             category,
             content,

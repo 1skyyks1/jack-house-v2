@@ -34,12 +34,11 @@ const authCallback = async (req, res) => {
                 user_name: me.username,
                 osu_uid: me.id,
                 avatar: me.avatar_url,
-                role: 0, // 默认角色
                 status: 0, // 默认状态
             })
         }
 
-        const token = jwt.sign({ userId: user.user_id, role: user.role },
+        const token = jwt.sign({ userId: user.user_id },
             process.env.JWT_SECRET, { expiresIn: '7d' });
         setAuthCookie(res, token);
 

@@ -14,6 +14,8 @@
     "migrate:event-score-details": "node scripts/migrate-event-score-details.js",
     "migrate:pack-originals": "node scripts/migrate-pack-originals.js",
     "migrate:pack-feedback": "node scripts/migrate-pack-feedback.js",
+    "migrate:pack-feedback-protect": "node scripts/migrate-pack-feedback-protect.js",
+    "migrate:post-file-comments": "node scripts/migrate-post-file-comments.js",
     "migrate:pack-tag-taxonomy": "node scripts/migrate-pack-tag-taxonomy.js",
     "migrate:badges-to-github": "node scripts/migrate-badges-to-github.js",
     "migrate:event-stage-backgrounds-to-github": "node scripts/migrate-event-stage-backgrounds-to-github.js",

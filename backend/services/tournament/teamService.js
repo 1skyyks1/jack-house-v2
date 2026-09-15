@@ -1,3 +1,4 @@
+const permissionService = require('../permissionService');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Op } = require('sequelize');
@@ -81,16 +82,16 @@ const ensureUserCanRegister = async (tid, userId, options = {}) => {
 };
 
 const isTournamentStaff = async (tid, userId) => {
-    const user = await User.findByPk(userId, { attributes: ['user_id', 'role'] });
-    if (user && user.role === 2) return true;
+    const permissions = await permissionService.getUserPermissions(userId);
+    if (permissionService.hasPermission(permissions.permissionSet, 'tournaments')) return true;
 
     const staff = await TStaff.findOne({ where: { t_id: tid, user_id: userId } });
     return Boolean(staff);
 };
 
 const isTournamentHost = async (tid, userId) => {
-    const user = await User.findByPk(userId, { attributes: ['user_id', 'role'] });
-    if (user && user.role === 2) return true;
+    const permissions = await permissionService.getUserPermissions(userId);
+    if (permissionService.hasPermission(permissions.permissionSet, 'tournaments')) return true;
 
     const host = await TStaff.findOne({ where: { t_id: tid, user_id: userId, role: 'host' } });
     return Boolean(host);

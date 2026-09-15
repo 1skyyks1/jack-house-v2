@@ -1,3 +1,4 @@
+const { can } = require('../../utils/permissions');
 const { User, PostFile, Post, PostTranslation } = require('../../models')
 const sequelize = require('../../config/db')
 const { Op } = require("sequelize");
@@ -285,6 +286,21 @@ exports.getFileByPostId = async (req, res) => {
     }
 }
 
+/**
+ * 对普通用户/投稿人隐藏内部待定状态（status: 3）及待定反馈
+ * @param {object} file PostFile 实例或数据对象
+ * @param {boolean} canReview 是否具有审稿权限
+ * @returns {object} 脱敏后的数据对象
+ */
+const sanitizePostFileForPublic = (file, canReview) => {
+    const raw = typeof file.toJSON === 'function' ? file.toJSON() : { ...file };
+    if (!canReview && raw.status === 3) {
+        raw.status = 0;
+        raw.feedback = null;
+    }
+    return raw;
+};
+
 // 获取指定征稿中指定用户的投稿
 exports.getFileByPostAndUser = async (req, res) => {
     const { post_id } = req.params;
@@ -299,7 +315,10 @@ exports.getFileByPostAndUser = async (req, res) => {
             },
         });
 
-        res.json({ data: rows });
+        const canReview = can(req, 'postFiles');
+        const data = rows.map((file) => sanitizePostFileForPublic(file, canReview));
+
+        res.json({ data });
     } catch (error){
         res.status(500).json({ message: req.t('postFile.getFailed') });
     }
@@ -318,8 +337,11 @@ exports.getFileByUserId = async (req, res) => {
             limit,
             offset,
         });
-        const totalPages = Math.ceil(count / limit)
-        res.json({ data: rows, page, pageSize: limit, totalPages, total: count });
+
+        const canReview = Boolean(req.user && can(req, 'postFiles'));
+        const data = rows.map((file) => sanitizePostFileForPublic(file, canReview));
+        const totalPages = Math.ceil(count / limit);
+        res.json({ data, page, pageSize: limit, totalPages, total: count });
     } catch (error){
         res.status(500).json({ message: req.t('postFile.getFailed') });
     }
@@ -577,6 +599,12 @@ exports.updatePostFile = async (req, res) => {
 exports.reviewPostFile = async (req, res) => {
     const { status, feedback } = req.body;
     const { file_id } = req.params;
+    const nextStatus = Number(status);
+
+    if (![1, 2, 3].includes(nextStatus)) {
+        return res.status(400).json({ message: req.t('postFile.invalidStatus') || 'Invalid review status' });
+    }
+
     try {
         const originalPostFile = await PostFile.findByPk(file_id);
         if(!originalPostFile) {
@@ -585,7 +613,7 @@ exports.reviewPostFile = async (req, res) => {
         if (!isPostFileLocked(originalPostFile.uploaded_time)) {
             return res.status(409).json({ message: req.t('postFile.reviewBeforeLocked') });
         }
-        await originalPostFile.update({ status, feedback });
+        await originalPostFile.update({ status: nextStatus, feedback });
         res.status(200).json({ message: req.t('postFile.reviewSuccess') });
     } catch (err) {
         res.status(500).json({ message: req.t('postFile.updateFailed') });
@@ -605,7 +633,7 @@ exports.deleteFile = async (req, res) => {
             ownerId: file.user_id,
             uploadedTime: file.uploaded_time,
             userId: req.user.user_id,
-            userRole: req.user.role,
+            canReview: can(req, 'postFiles'),
         });
         if (deleteAccess === 'forbidden') {
             return res.status(403).json({ message: req.t('postFile.deleteForbidden') });

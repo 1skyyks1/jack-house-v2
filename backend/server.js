@@ -11,6 +11,7 @@ const packCommentRoutes = require('./routes/packCommentRoute')
 const eventRoutes = require('./routes/eventRoute');
 const badgeRoutes = require('./routes/badgeRoute');
 const permissionsRoutes = require('./routes/permissions');
+const roleRoutes = require('./routes/roleRoute');
 const tournamentRoutes = require('./routes/tournamentRoute');
 const uploadRoutes = require('./routes/uploadRoute');
 const toolRoutes = require('./routes/toolRoute');
@@ -289,6 +290,7 @@ app.use('/packCom', commonLimiter, packCommentRoutes);
 app.use('/event', commonLimiter, eventRoutes)
 app.use('/badge', commonLimiter, badgeRoutes)
 app.use('/permissions', commonLimiter, permissionsRoutes)
+app.use('/roles', commonLimiter, roleRoutes)
 app.use('/t', commonLimiter, tournamentRoutes)
 app.use('/upload', commonLimiter, uploadRoutes)
 app.use('/tool', toolRoutes)

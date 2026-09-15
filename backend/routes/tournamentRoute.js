@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { isHost, isCreatorHost, isReferee, isPooler, isStaff } = require('../middleware/tournamentAuth');
-const { ROLES } = require('../config/roles');
+const { PERMISSIONS } = require('../config/permissions');
 
 // 控制器
 const tournamentController = require('../controllers/tournament/tournamentController');
@@ -126,7 +126,7 @@ router.delete('/:tid/team/leave', authMiddleware(), teamController.leaveTeam);
 
 // ========== 管理路由（需要 Staff 权限）==========
 // 创建赛事
-router.post('/', authMiddleware([ROLES.ADMIN]), tournamentController.createTournament);
+router.post('/', authMiddleware(), authMiddleware.requirePermission(PERMISSIONS.TOURNAMENTS), tournamentController.createTournament);
 
 // 更新赛事
 router.put('/:tid', authMiddleware(), isHost, tournamentController.updateTournament);

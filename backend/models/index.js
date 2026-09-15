@@ -2,6 +2,7 @@ const Post = require('./post/post');
 const PostTranslation = require('./post/postTranslation');
 const PostFile = require('./post/postFile');
 const PostComment = require('./post/postComment');
+const PostFileComment = require('./post/postFileComment');
 const User = require('./user/user');
 const Pack = require('./pack/pack');
 const PackMap = require('./pack/packMap');
@@ -11,6 +12,7 @@ const PackFeedback = require('./pack/packFeedback');
 const PackScore = require('./pack/packScore');
 const Badge = require('./user/badge');
 const Role = require('./user/role');
+const UserRole = require('./user/userRole');
 const RichTextAsset = require('./richTextAsset');
 const RichTextAssetReference = require('./richTextAssetReference');
 
@@ -28,15 +30,20 @@ PostComment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 PostFile.belongsTo(Post, { foreignKey: 'post_id' });
 PostFile.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+PostFile.hasMany(PostFileComment, { foreignKey: 'file_id', onDelete: 'CASCADE', as: 'reviewerComments' });
+PostFileComment.belongsTo(PostFile, { foreignKey: 'file_id' });
+PostFileComment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+User.hasMany(PostFileComment, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+
 
 PostTranslation.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
 
 RichTextAsset.hasMany(RichTextAssetReference, { foreignKey: 'rich_text_asset_id', onDelete: 'CASCADE', as: 'references' });
 RichTextAssetReference.belongsTo(RichTextAsset, { foreignKey: 'rich_text_asset_id', as: 'asset' });
 
-User.hasMany(Post, { foreignKey: 'user_id', onDelete: 'CASCADE' })
+User.hasMany(Post, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(PostFile, { foreignKey: 'user_id', onDelete: 'CASCADE' });
-User.hasMany(PostComment, { foreignKey: 'user_id', onDelete: 'CASCADE' })
+User.hasMany(PostComment, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(Pack, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(EventScore, { foreignKey: 'user_id', onDelete: 'CASCADE' });
 User.hasMany(PackScore, { foreignKey: 'user_id', onDelete: 'CASCADE' });
@@ -45,20 +52,20 @@ User.belongsToMany(Badge, {
     foreignKey: 'user_id',
     otherKey: 'badge_id',
     as: 'badges'
-})
+});
 User.belongsToMany(Role, {
-    through: 'user_roles',
+    through: UserRole,
     foreignKey: 'user_id',
     otherKey: 'role_id',
     as: 'roles'
-})
+});
 
 Pack.belongsToMany(Tag, {
     through: 'pack_tags',
     foreignKey: 'pack_id',
     otherKey: 'tag_id',
     as: 'tags'
-})
+});
 Pack.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Pack.hasMany(PackComment, { foreignKey: 'pack_id' });
 Pack.hasMany(PackMap, { foreignKey: 'pack_id', as: 'maps' });
@@ -75,7 +82,7 @@ Tag.belongsToMany(Pack, {
     foreignKey: 'tag_id',
     otherKey: 'pack_id',
     as: 'packs'
-})
+});
 
 PackComment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 PackComment.belongsTo(Pack, { foreignKey: 'pack_id' });
@@ -89,14 +96,14 @@ Badge.belongsToMany(User, {
     foreignKey: 'badge_id',
     otherKey: 'user_id',
     as: 'users'
-})
+});
 
 Role.belongsToMany(User, {
-    through: 'user_roles',
+    through: UserRole,
     foreignKey: 'role_id',
     otherKey: 'user_id',
     as: 'users'
-})
+});
 
 Event.hasMany(EventStage, { foreignKey: 'event_id', onDelete: 'CASCADE', as: 'stage' });
 
@@ -111,8 +118,11 @@ module.exports = {
     PostTranslation,
     PostFile,
     PostComment,
+    PostFileComment,
     User,
     Badge,
+    Role,
+    UserRole,
     Pack,
     PackMap,
     Tag,

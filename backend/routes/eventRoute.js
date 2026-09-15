@@ -5,7 +5,8 @@ const EventStageController = require('../controllers/event/eventStageController'
 const EventScoreController = require('../controllers/event/eventScoreController');
 const osuEventController = require('../controllers/osu/osuEventController');
 const checkAuth = require('../middleware/authMiddleware');
-const { ROLES } = require('../config/roles');
+const { requirePermission } = checkAuth;
+const { PERMISSIONS } = require('../config/permissions');
 
 const rateLimit = require('express-rate-limit');
 const osuLimiter = rateLimit({
@@ -27,29 +28,29 @@ router.get('/', EventController.getEvents);
 // 获取某活动详情
 router.get('/:event_id', EventController.getEventInfo);
 
-// 创建活动
-router.post('/', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventController.createEvent);
+// 创建活动 (需要 events 权限)
+router.post('/', checkAuth(), requirePermission(PERMISSIONS.EVENTS), EventController.createEvent);
 
 // 更新活动
-router.put('/:event_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventController.updateEvent);
+router.put('/:event_id', checkAuth(), requirePermission(PERMISSIONS.EVENTS), EventController.updateEvent);
 
 // 删除活动
-router.delete('/:event_id', checkAuth([ROLES.ADMIN]), EventController.deleteEvent);
+router.delete('/:event_id', checkAuth(), requirePermission(PERMISSIONS.EVENTS), EventController.deleteEvent);
 
 // 获取指定活动的项目
 router.get('/:event_id/stage', EventStageController.getStages);
 
-// 创建项目
-router.post('/stage', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.createStage);
+// 创建项目 (需要 eventStages 或 events 权限)
+router.post('/stage', checkAuth(), requirePermission(PERMISSIONS.EVENT_STAGES, PERMISSIONS.EVENTS), EventStageController.createStage);
 
 // 从 osu! beatmapset 读取所有难度，生成待提交的 Stage 草稿
-router.get('/stage/import/:beatmapset_id', beatmapsetImportLimiter, checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.importBeatmapset);
+router.get('/stage/import/:beatmapset_id', beatmapsetImportLimiter, checkAuth(), requirePermission(PERMISSIONS.EVENT_STAGES, PERMISSIONS.EVENTS), EventStageController.importBeatmapset);
 
 // 修改项目
-router.put('/stage/:stage_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.updateStage);
+router.put('/stage/:stage_id', checkAuth(), requirePermission(PERMISSIONS.EVENT_STAGES, PERMISSIONS.EVENTS), EventStageController.updateStage);
 
 // 删除项目
-router.delete('/stage/:stage_id', checkAuth([ROLES.ORG, ROLES.ADMIN]), EventStageController.deleteStage);
+router.delete('/stage/:stage_id', checkAuth(), requirePermission(PERMISSIONS.EVENT_STAGES, PERMISSIONS.EVENTS), EventStageController.deleteStage);
 
 // 获取指定项目的分数排行榜
 router.get('/rank/stage/:stage_id', EventScoreController.getStageScore);
@@ -58,9 +59,9 @@ router.get('/rank/stage/:stage_id', EventScoreController.getStageScore);
 router.get('/rank/event/:event_id', EventScoreController.getEventScore);
 
 // 获取指定用户指定活动中的各项目分数+排名和总分数和排名
-router.get('/userRecord/:event_id', checkAuth(), EventScoreController.getUserScore)
+router.get('/userRecord/:event_id', checkAuth(), EventScoreController.getUserScore);
 
 // 从osu获取最近一条分数
-router.post('/:event_id/score', osuLimiter, checkAuth(), osuEventController.userRecentScore)
+router.post('/:event_id/score', osuLimiter, checkAuth(), osuEventController.userRecentScore);
 
-module.exports = router
+module.exports = router;

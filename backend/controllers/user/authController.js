@@ -21,12 +21,11 @@ const register = async (req, res) => {
             user_name: username,
             email,
             password,
-            role: 0,
             status: 0,
         });
 
         // 生成 JWT
-        const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user.user_id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         setAuthCookie(res, token);
 
         res.status(201).json({ data: { message: req.t('auth.registerSuccess'), userId: user.user_id } });
@@ -61,7 +60,7 @@ const login = async (req, res) => {
         }
 
         // 生成 JWT
-        const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user.user_id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         setAuthCookie(res, token);
 
         res.json({ data: { message: req.t('auth.loginSuccess'), userId: user.user_id } });

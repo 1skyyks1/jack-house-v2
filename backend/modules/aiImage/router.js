@@ -1,6 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { ROLES } = require('../../config/roles');
+const { PERMISSIONS } = require('../../config/permissions');
 const { parseSubmission } = require('./upload');
 const aiImageController = require('./controller');
 const checkAuth = require('../../middleware/authMiddleware');
@@ -19,7 +19,7 @@ const submissionLimiter = rateLimit({
 });
 router.use(checkAuth());
 router.get('/config', aiImageController.getConfig);
-router.get('/admin/jobs', checkAuth([ROLES.ADMIN]), aiImageController.listAudit);
+router.get('/admin/jobs', checkAuth.requirePermission(PERMISSIONS.AI_IMAGES), aiImageController.listAudit);
 router.get('/jobs', aiImageController.listMine);
 router.get('/jobs/:jobId/results/:index', aiImageController.getResult);
 router.get('/jobs/:jobId', aiImageController.getMine);

@@ -27,10 +27,6 @@ const User = sequelize.define('User', {
         type: DataTypes.STRING,
         allowNull: true,
     },
-    role: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0,  // 默认角色为0（普通用户）
-    },
     status: {
         type: DataTypes.INTEGER,
         defaultValue: 0,  // 默认为0（正常）

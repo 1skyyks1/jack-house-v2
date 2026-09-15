@@ -1,3 +1,4 @@
+const { resolveUserPermissions, hasPermission } = require('../../utils/permissions');
 const { TStaff, TPlayer } = require('../../models/tournament');
 const User = require('../../models/user/user');
 const sequelize = require('../../config/db');
@@ -11,7 +12,7 @@ const makeError = (message, status = 400) => {
 };
 
 const canManageHost = (operator, tournament) => {
-    return operator?.role === 2 || Number(tournament?.created_by) === Number(operator?.user_id);
+    return hasPermission(resolveUserPermissions(operator).permissionSet, 'tournaments') || Number(tournament?.created_by) === Number(operator?.user_id);
 };
 
 const normalizeString = (value) => {
@@ -78,7 +79,6 @@ const addStaff = async (tid, body, operator, tournament) => {
                     password: null,
                     email: null,
                     avatar: normalizeString(body.avatar) || osuAvatarUrl(osuUid),
-                    role: 0,
                     status: 0,
                     osu_uid: osuUid,
                     qq: null,

@@ -22,12 +22,12 @@ const patchMethod = (t, object, name, implementation) => {
     });
 };
 
-const mockReservationDatabase = (t, { activeForUser = 0, globalActive = 0, role = 0, used = 0 } = {}) => {
+const mockReservationDatabase = (t, { activeForUser = 0, globalActive = 0, roles = [], used = 0 } = {}) => {
     const transaction = { LOCK: { UPDATE: 'UPDATE' } };
     let countCall = 0;
     patchMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
     patchMethod(t, AiImageRuntime, 'findByPk', async () => ({ runtime_id: 1 }));
-    patchMethod(t, User, 'findByPk', async () => ({ user_id: 7, role }));
+    patchMethod(t, User, 'findByPk', async () => ({ user_id: 7, roles }));
     patchMethod(t, AiImageJob, 'update', async () => [0]);
     patchMethod(t, AiImageJob, 'findOne', async () => null);
     patchMethod(t, AiImageJob, 'count', async () => {
@@ -49,9 +49,9 @@ const createMockJob = (values) => ({
 });
 
 test('daily limits match user, organizer, and administrator roles', () => {
-    assert.equal(service.getDailyLimit(0), 10);
-    assert.equal(service.getDailyLimit(1), 30);
-    assert.equal(service.getDailyLimit(2), null);
+    assert.equal(service.getDailyLimit({ roles: [] }), 10);
+    assert.equal(service.getDailyLimit({ roles: ['organizer'] }), 30);
+    assert.equal(service.getDailyLimit({ isSuperAdmin: true, roles: ['admin'] }), null);
 });
 
 test('all documented gpt-image-2 size presets are enabled by default', (t) => {
@@ -94,7 +94,7 @@ test('user config omits model, concurrency, and retention implementation details
     patchMethod(t, AiImageJob, 'sum', async () => 2);
     patchMethod(t, AiImageJob, 'findOne', async () => null);
 
-    const config = await service.getUserConfig({ userId: 7, role: 0 });
+    const config = await service.getUserConfig({ userId: 7, access: { roles: [] } });
     assert.equal(config.quota.used, 2);
     assert.equal(Object.hasOwn(config, 'model'), false);
     assert.equal(Object.hasOwn(config, 'concurrency'), false);
@@ -172,11 +172,10 @@ test('custom exact pixel sizes are accepted within the image pixel budget', () =
 });
 
 test('one active job blocks every role, including administrators', async (t) => {
-    mockReservationDatabase(t, { activeForUser: 1, role: 2 });
+    mockReservationDatabase(t, { activeForUser: 1, roles: [{ role_code: 'admin', permissions: ['*'] }] });
 
     await assert.rejects(service.submitJob({
         userId: 7,
-        role: 2,
         body: {
             idempotencyKey: '1234567890abcdef',
             prompt: 'test',
@@ -192,11 +191,10 @@ test('shared upstream concurrency is enforced before submission', async (t) => {
     t.after(() => {
         process.env.AI_IMAGE_GLOBAL_CONCURRENCY = originalConcurrency;
     });
-    mockReservationDatabase(t, { activeForUser: 0, globalActive: 4, role: 0 });
+    mockReservationDatabase(t, { activeForUser: 0, globalActive: 4 });
 
     await assert.rejects(service.submitJob({
         userId: 7,
-        role: 0,
         body: {
             idempotencyKey: '1234567890abcdef',
             prompt: 'test',
@@ -207,11 +205,10 @@ test('shared upstream concurrency is enforced before submission', async (t) => {
 });
 
 test('organizer quota stops the 31st accepted request', async (t) => {
-    mockReservationDatabase(t, { role: 1, used: 30 });
+    mockReservationDatabase(t, { roles: [{ role_code: 'organizer', permissions: ['events'] }], used: 30 });
 
     await assert.rejects(service.submitJob({
         userId: 7,
-        role: 1,
         body: {
             idempotencyKey: '1234567890abcdef',
             prompt: 'test',
@@ -222,7 +219,7 @@ test('organizer quota stops the 31st accepted request', async (t) => {
 });
 
 test('accepted native generation stores the mapping without persisting result URLs', async (t) => {
-    mockReservationDatabase(t, { role: 0, used: 2 });
+    mockReservationDatabase(t, { used: 2 });
     let createdJob;
     patchMethod(t, AiImageJob, 'create', async (values) => {
         createdJob = createMockJob({ ai_image_job_id: 1, created_time: new Date(), updated_time: new Date(), ...values });
@@ -241,7 +238,6 @@ test('accepted native generation stores the mapping without persisting result UR
 
     const result = await service.submitJob({
         userId: 7,
-        role: 0,
         body: {
             idempotencyKey: '1234567890abcdef',
             prompt: 'test',
@@ -352,4 +348,13 @@ test('image results are fetched server-side only after checking job ownership', 
         service.getUserJobResult({ index: '0', publicId: 'public-1', userId: 8 }),
         (error) => error.code === 'job_not_found' && error.status === 404,
     );
+});
+
+
+test('non-superadmin RBAC roles cannot receive unlimited quota', async (t) => {
+    mockReservationDatabase(t, { roles: [{ role_code: 'moderator', permissions: ['posts'] }], used: 10 });
+    await assert.rejects(service.submitJob({
+        userId: 7,
+        body: { idempotencyKey: '1234567890abcdef', prompt: 'test', requestType: 'generation', size: '1024x1024' },
+    }), (error) => error.code === 'daily_quota_exhausted' && error.status === 429);
 });

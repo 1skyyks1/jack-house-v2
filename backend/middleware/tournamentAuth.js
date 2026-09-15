@@ -1,10 +1,10 @@
 const { TStaff, Tournament } = require('../models/tournament');
-const User = require('../models/user/user');
+const { can } = require('../utils/permissions');
 const { translateMessage } = require('../utils/tournamentI18n');
 
 /**
  * 检查用户是否有指定赛事的 Staff 权限
- * ADMIN 用户（role=2）可以绕过所有权限检查
+ * 具备 tournaments 权限的用户可以执行赛事全局管理
  * @param {string[]} allowedRoles - 允许的角色列表
  */
 const checkTournamentRole = (allowedRoles) => {
@@ -18,8 +18,7 @@ const checkTournamentRole = (allowedRoles) => {
             }
 
             // 检查是否是系统管理员（ADMIN），管理员可以执行任何操作
-            const user = await User.findByPk(userId);
-            if (user && user.role === 2) {
+            if (can(req, 'tournaments')) {
                 req.staffRoles = ['admin'];
                 return next();
             }
@@ -72,8 +71,7 @@ const isCreatorHost = async (req, res, next) => {
             return res.status(401).json({ message: translateMessage(req, '请先登录') });
         }
 
-        const user = await User.findByPk(userId);
-        if (user && user.role === 2) {
+        if (can(req, 'tournaments')) {
             req.staffRoles = ['admin'];
             return next();
         }

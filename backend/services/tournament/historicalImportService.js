@@ -83,7 +83,6 @@ const resolveExistingUser = async (player, transaction) => {
         password: null,
         email: null,
         avatar,
-        role: 0,
         status: 0,
         osu_uid: osuUid,
         qq: null,

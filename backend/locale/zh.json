@@ -108,6 +108,7 @@
     "updateSuccess": "投稿更新成功",
     "updateFailed": "更新失败",
     "reviewSuccess": "投稿审核成功",
+    "invalidStatus": "无效的审核状态",
     "reviewBeforeLocked": "投稿仍在 24 小时修改期内，锁定后才能审核",
     "deleteSuccess": "删除成功",
     "deleteFailed": "删除失败",
@@ -120,7 +121,14 @@
     "invalidChecksum": "无效的文件校验值",
     "invalidFileType": "不允许上传该文件类型",
     "fileSizeLimit": "投稿文件大小超出限制",
-    "totalSizeLimit": "投稿文件总大小超出限制"
+    "totalSizeLimit": "投稿文件总大小超出限制",
+    "invalidComment": "评论内容不合法（1~2000字）",
+    "commentCreated": "评论发表成功",
+    "commentDeleted": "评论删除成功",
+    "commentNotFound": "评论不存在",
+    "getCommentsFailed": "获取评论失败",
+    "createCommentFailed": "发表评论失败",
+    "deleteCommentFailed": "删除评论失败"
   },
   "tag": {
     "getFailed": "获取标签列表失败",
@@ -433,6 +441,24 @@
       "endTime": "结束时间",
       "redTeam": "红队",
       "blueTeam": "蓝队"
+    }
+  },
+  "rbacRole": {
+    "admin": {
+      "name": "超级管理员",
+      "description": "拥有系统所有后台管理与操作权限"
+    },
+    "organizer": {
+      "name": "活动组织者",
+      "description": "负责社区活动、阶段与徽章的发放和管理"
+    },
+    "moderator": {
+      "name": "投稿审核员",
+      "description": "负责社区主站帖子、附件与用户反馈的审核处理"
+    },
+    "pack_reviewer": {
+      "name": "叠包主理人",
+      "description": "负责主站图包标签分类、推荐与反馈处理"
     }
   }
 }

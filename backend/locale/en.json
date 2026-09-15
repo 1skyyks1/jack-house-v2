@@ -108,6 +108,7 @@
     "updateSuccess": "Post file updated successfully",
     "updateFailed": "Update failed",
     "reviewSuccess": "Post file reviewed successfully",
+    "invalidStatus": "Invalid review status",
     "reviewBeforeLocked": "This submission is still within its 24-hour modification window and cannot be reviewed until it is locked.",
     "deleteSuccess": "Deleted successfully",
     "deleteFailed": "Delete failed",
@@ -120,7 +121,14 @@
     "invalidChecksum": "Invalid file checksum",
     "invalidFileType": "This file type is not allowed",
     "fileSizeLimit": "Submission file exceeds the size limit",
-    "totalSizeLimit": "Submission files exceed the total size limit"
+    "totalSizeLimit": "Submission files exceed the total size limit",
+    "invalidComment": "Invalid comment text (1-2000 characters)",
+    "commentCreated": "Comment added",
+    "commentDeleted": "Comment deleted",
+    "commentNotFound": "Comment not found",
+    "getCommentsFailed": "Failed to load comments",
+    "createCommentFailed": "Failed to add comment",
+    "deleteCommentFailed": "Failed to delete comment"
   },
   "tag": {
     "getFailed": "Failed to retrieve tag list",
@@ -433,6 +441,24 @@
       "endTime": "End time",
       "redTeam": "Red team",
       "blueTeam": "Blue team"
+    }
+  },
+  "rbacRole": {
+    "admin": {
+      "name": "Administrator",
+      "description": "Has full access to all admin operations and features"
+    },
+    "organizer": {
+      "name": "Organizer",
+      "description": "Responsible for managing community events, stages, and badges"
+    },
+    "moderator": {
+      "name": "Reviewer",
+      "description": "Responsible for reviewing community posts, attachments, and user feedback"
+    },
+    "pack_reviewer": {
+      "name": "Pack Curator",
+      "description": "Responsible for managing pack tags, recommendations, and reviews"
     }
   }
 }

@@ -1,11 +1,11 @@
 const express = require('express');
 const checkAuth = require('../../middleware/authMiddleware');
-const { ROLES } = require('../../config/roles');
+const { PERMISSIONS } = require('../../config/permissions');
 const service = require('./service');
 const { createRewardImageUploadGrant } = require('./pngUrlClient');
 
 const router = express.Router();
-const adminOnly = checkAuth([ROLES.ADMIN]);
+const adminOnly = [checkAuth(), checkAuth.requirePermission(PERMISSIONS.REWARDS)];
 
 function asyncRoute(handler) {
     return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);

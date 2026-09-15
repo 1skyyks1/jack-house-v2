@@ -1,7 +1,13 @@
 const { Post, PostTranslation, User } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
-const { ROLES } = require("../../config/roles");
+const { can } = require('../../utils/permissions');
+
+const canPublishType = (req, type) => Number(type) === 0
+    || (Number(type) === 1 && (can(req, 'postFiles') || can(req, 'events') || can(req, 'posts')))
+    || (Number(type) === 2 && (can(req, 'events') || can(req, 'posts')))
+    || (Number(type) === 3 && can(req, 'announcement'));
+const canModeratePost = (req, post) => can(req, Number(post.type) === 3 ? 'announcement' : 'posts');
 const { sanitizeRichTextHtml } = require('../../utils/richTextSanitizer');
 const { extractImageSources, syncRichTextAssetReferences } = require('../../services/richTextAssetService');
 // const { addFolder, getAuthCode } = require('../../utils/pan');
@@ -26,7 +32,7 @@ exports.getAllPosts = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['user_name', 'role'],
+                    attributes: ['user_name'],
                 }
             ]
         });
@@ -63,7 +69,7 @@ exports.getPostByType = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['user_name', 'role'],
+                    attributes: ['user_name'],
                 }
             ]
         });
@@ -98,7 +104,7 @@ exports.getPostWithContentByType = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['user_name', 'role'],
+                    attributes: ['user_name'],
                 }
             ]
         })
@@ -119,7 +125,6 @@ exports.getPostWithContentByType = async (req, res) => {
             // 提取用户信息
             if (postData.user) {
                 postData.user_name = postData.user.user_name;
-                postData.role = postData.user.role;
                 delete postData.user;
             }
 
@@ -164,7 +169,7 @@ exports.getPostsByUserId = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['user_name', 'role'],
+                    attributes: ['user_name'],
                 }
             ]
         });
@@ -218,7 +223,6 @@ const processPosts = (posts) => {
         if(postData.user){
             // 提取用户信息
             postData.user_name = postData.user.user_name;
-            postData.role = postData.user.role;
             // 删除冗余字段
             delete postData.user;
         }
@@ -242,7 +246,7 @@ exports.getPostById = async (req, res) => {
                     {
                         model: User,
                         as: 'user',
-                        attributes: ['user_name', 'role', 'avatar'],
+                        attributes: ['user_name', 'avatar'],
                     }
                 ]
             });
@@ -260,18 +264,7 @@ exports.getPostById = async (req, res) => {
 exports.createPost = async (req, res) => {
     const { type, translations, end, limit } = req.body;
     const user_id = req.user.user_id;
-    const userRole = req.user.role;
-
-    const roleTypePermissions = {
-        0: [0],         // USER 只能发常规帖
-        1: [0, 1, 2],   // ORG 可以发除了公告以外的帖子
-        2: 'all',       // ADMIN 可以发所有帖子
-    };
-
-    if(
-        roleTypePermissions[userRole] !== 'all' &&
-        !roleTypePermissions[userRole].includes(type)
-    ) {
+    if (!canPublishType(req, type)) {
         return res.status(403).json({ message: req.t('post.noPermission') });
     }
 
@@ -324,7 +317,6 @@ exports.updatePost = async (req, res) => {
     const { post_id } = req.params;
     const { type, translations, end, limit } = req.body;
     const user_id = req.user.user_id;
-    const role = req.user.role;
 
     let endDate;
     if(Number(type) === 1 && end) {
@@ -340,9 +332,12 @@ exports.updatePost = async (req, res) => {
         if (!existingPost) {
             return res.status(404).json({ message: req.t('post.notFound') });
         }
-        const isAdmin = role === ROLES.ADMIN;
+        const isAdmin = canModeratePost(req, existingPost);
         const isOwner = existingPost.user_id === user_id;
         if (isAdmin || isOwner) {
+            if (type !== undefined && Number(type) !== Number(existingPost.type) && !canPublishType(req, type)) {
+                return res.status(403).json({ message: req.t('post.noPermission') });
+            }
             existingPost.type = type ?? existingPost.type;
             existingPost.end = endDate ?? existingPost.end;
             existingPost.limit = limit ?? existingPost.limit;
@@ -410,13 +405,12 @@ exports.updatePost = async (req, res) => {
 exports.deletePost = async (req, res) => {
     const { post_id } = req.params;
     const user_id = req.user.user_id;
-    const role = req.user.role;
     try {
         const post = await Post.findByPk(post_id);
         if (!post) {
             return res.status(404).json({ message: req.t('post.notFound') });
         }
-        const isAdmin = role === ROLES.ADMIN;
+        const isAdmin = canModeratePost(req, post);
         const isOwner = post.user_id === user_id;
         if (isAdmin || isOwner) {
             await post.destroy();
@@ -458,7 +452,7 @@ exports.searchPosts = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['user_name', 'role'],
+                    attributes: ['user_name'],
                 }
             ]
         });
@@ -497,7 +491,7 @@ exports.getAllType3Posts = async (req, res) => {
                     {
                         model: User,
                         as: 'user',
-                        attributes: ['user_name', 'role'],
+                        attributes: ['user_name'],
                     }
                 ]
             });

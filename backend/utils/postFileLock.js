@@ -18,8 +18,8 @@ const isPostFileLocked = (uploadedTime, now = new Date()) => {
     return now.getTime() >= lockedAt.getTime();
 };
 
-const getPostFileDeleteAccess = ({ ownerId, uploadedTime, userId, userRole, now = new Date() }) => {
-    if ([1, 2].includes(userRole)) {
+const getPostFileDeleteAccess = ({ ownerId, uploadedTime, userId, canReview = false, now = new Date() }) => {
+    if (canReview) {
         return 'reviewer';
     }
     if (Number(ownerId) !== Number(userId)) {

@@ -1,8 +1,9 @@
+const { resolveUserPermissions } = require('../../utils/permissions');
+const { USER_ROLES_INCLUDE } = require('../../services/permissionService');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Op } = require('sequelize');
 const sequelize = require('../../config/db');
-const { ROLES } = require('../../config/roles');
 const User = require('../../models/user/user');
 const AiImageJob = require('./models/AiImageJob');
 const AiImageRuntime = require('./models/AiImageRuntime');
@@ -51,7 +52,7 @@ class AiImageError extends Error {
     }
 }
 
-const submitJob = async ({ userId, role, body, images = [], mask = null, sourceIp, userAgent }) => {
+const submitJob = async ({ userId, body, images = [], mask = null, sourceIp, userAgent }) => {
     if (!upstreamClient.isConfigured()) {
         throw new AiImageError(503, 'service_unavailable', 'AI image service is unavailable');
     }
@@ -67,7 +68,6 @@ const submitJob = async ({ userId, role, body, images = [], mask = null, sourceI
         referenceMetadata,
         requestType: input.requestType,
         prompt: input.prompt,
-        role,
         size: input.size,
         sourceIp,
         userAgent,
@@ -136,7 +136,6 @@ const reserveJob = async ({
     referenceMetadata,
     requestType,
     prompt,
-    role,
     size,
     sourceIp,
     userAgent,
@@ -151,6 +150,7 @@ const reserveJob = async ({
     }
 
     const lockedUser = await User.findByPk(userId, {
+        include: USER_ROLES_INCLUDE,
         transaction,
         lock: transaction.LOCK.UPDATE,
     });
@@ -181,8 +181,8 @@ const reserveJob = async ({
     }
 
     const quotaDate = getQuotaDate();
-    const effectiveRole = Number.isInteger(Number(lockedUser.role)) ? Number(lockedUser.role) : Number(role);
-    const dailyLimit = getDailyLimit(effectiveRole);
+    const effective = resolveUserPermissions(lockedUser);
+    const dailyLimit = getDailyLimit(effective);
     if (dailyLimit !== null) {
         const used = await AiImageJob.sum('quota_units', {
             where: {
@@ -220,9 +220,9 @@ const reserveJob = async ({
     return { existing: false, job };
 });
 
-const getUserConfig = async ({ userId, role }) => {
+const getUserConfig = async ({ userId, access }) => {
     const quotaDate = getQuotaDate();
-    const dailyLimit = getDailyLimit(role);
+    const dailyLimit = getDailyLimit(access);
     const [usedRaw, activeJob] = await Promise.all([
         AiImageJob.sum('quota_units', {
             where: {
@@ -338,13 +338,12 @@ const listAuditJobs = async ({ page = 1, pageSize = DEFAULT_PAGE_SIZE, status, u
     const users = userIds.length > 0
         ? await User.findAll({
             where: { user_id: { [Op.in]: userIds } },
-            attributes: ['user_id', 'user_name', 'role'],
+            attributes: ['user_id', 'user_name'],
         })
         : [];
     const usersById = new Map(users.map((user) => [Number(user.user_id), {
         user_id: user.user_id,
         user_name: user.user_name,
-        role: user.role,
     }]));
 
     return {
@@ -625,10 +624,9 @@ const extensionForContentType = (contentType) => ({
     'image/webp': '.webp',
 }[contentType] || '.img');
 
-const getDailyLimit = (role) => {
-    const numericRole = Number(role);
-    if (numericRole === ROLES.ADMIN) return null;
-    if (numericRole === ROLES.ORG) return toPositiveInt(process.env.AI_IMAGE_DAILY_LIMIT_ORG, 30);
+const getDailyLimit = ({ isSuperAdmin = false, roles = [] } = {}) => {
+    if (isSuperAdmin) return null;
+    if (roles.includes('organizer')) return toPositiveInt(process.env.AI_IMAGE_DAILY_LIMIT_ORG, 30);
     return toPositiveInt(process.env.AI_IMAGE_DAILY_LIMIT_USER, 10);
 };
 

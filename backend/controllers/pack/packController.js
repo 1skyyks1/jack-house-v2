@@ -2,6 +2,7 @@ const { Pack, Tag, User, PackMap, PackComment, PackFeedback } = require('../../m
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
 const { validatePackTagSelection } = require('../../services/packTagService');
+const { getAllowedTagCategories } = require('../../utils/packTag');
 const { backfillPackScoresFromEvents } = require('../../services/packRankService');
 
 // 创建新图包（非osu）
@@ -284,7 +285,8 @@ exports.deletePack = async (req, res) => {
         await pack.setTags([], { transaction: t });
         await PackMap.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
         await PackComment.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
-        await PackFeedback.destroy({ where: { pack_id: pack.pack_id }, transaction: t });
+        // 重要设计说明：解绑图包反馈而不是物理删除，确保历史举报与审核审计留痕
+        await PackFeedback.update({ pack_id: null }, { where: { pack_id: pack.pack_id }, transaction: t });
         await pack.destroy({ transaction: t });
 
         await t.commit();
@@ -292,5 +294,70 @@ exports.deletePack = async (req, res) => {
     } catch (error) {
         await t.rollback();
         res.status(500).json({ message: req.t('pack.deleteFailed') });
+    }
+};
+
+/**
+ * 修改图包类型并自动处理标签分类约束
+ */
+exports.updatePackType = async (req, res) => {
+    const packId = Number(req.params.pack_id);
+    const targetType = Number(req.body.type);
+    const customTags = req.body.tags;
+
+    if (!Number.isInteger(packId) || packId <= 0) {
+        return res.status(400).json({ message: req.t('pack.notFound') });
+    }
+
+    if (![0, 1, 2, 3].includes(targetType)) {
+        return res.status(400).json({ message: req.t('pack.createFailed') });
+    }
+
+    try {
+        const pack = await Pack.findByPk(packId, {
+            include: [{ model: Tag, as: 'tags', attributes: ['tag_id', 'category', 'enabled'], through: { attributes: [] } }],
+        });
+        if (!pack) {
+            return res.status(404).json({ message: req.t('pack.notFound') });
+        }
+
+        let validTagIds = [];
+        if (Array.isArray(customTags)) {
+            const selection = await validatePackTagSelection(customTags, targetType);
+            if (!selection.valid) {
+                return res.status(400).json({ message: req.t('tag.invalidForPackType') });
+            }
+            validTagIds = selection.tagIds;
+        } else {
+            // 自动过滤出符合目标图包类型分类的已有标签
+            const allowedCategories = new Set(getAllowedTagCategories(targetType));
+            validTagIds = (pack.tags || [])
+                .filter((tag) => tag.enabled && allowedCategories.has(tag.category))
+                .map((tag) => tag.tag_id);
+        }
+
+        await sequelize.transaction(async (transaction) => {
+            await pack.update({ type: targetType }, { transaction });
+            await pack.setTags(validTagIds, { transaction });
+        });
+
+        const updatedPack = await Pack.findByPk(packId, {
+            include: [
+                {
+                    model: Tag,
+                    as: 'tags',
+                    attributes: ['tag_id', 'tag_key', 'tag_name', 'category', 'name_zh', 'name_en', 'sort_order', 'enabled'],
+                    through: { attributes: [] },
+                },
+            ],
+        });
+
+        res.status(200).json({
+            data: updatedPack,
+            message: req.t('pack.updateSuccess'),
+        });
+    } catch (error) {
+        console.error('Failed to update pack type:', error);
+        res.status(500).json({ message: req.t('pack.updateFailed') });
     }
 };

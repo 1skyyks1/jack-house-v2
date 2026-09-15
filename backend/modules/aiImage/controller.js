@@ -6,13 +6,13 @@ const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
 
 const getUserId = (req) => Number(req.user?.user_id);
-const getRole = (req) => Number(req.user?.role || 0);
+const getAccess = (req) => ({ isSuperAdmin: Boolean(req.isSuperAdmin), roles: req.userRoles || [] });
 
 exports.getConfig = async (req, res) => {
     try {
         const data = await aiImageService.getUserConfig({
             userId: getUserId(req),
-            role: getRole(req),
+            access: getAccess(req),
         });
         return res.json({ data });
     } catch (error) {
@@ -28,7 +28,6 @@ exports.submit = async (req, res) => {
     try {
         const data = await aiImageService.submitJob({
             userId: getUserId(req),
-            role: getRole(req),
             body: req.body,
             images,
             mask,

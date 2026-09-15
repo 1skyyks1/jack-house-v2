@@ -28,9 +28,9 @@ test('owners can delete only during the window while reviewers retain moderation
     const duringWindow = new Date('2026-08-15T12:00:00.000Z');
     const afterWindow = new Date('2026-08-16T00:00:00.000Z');
 
-    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 7, userRole: 0, now: duringWindow }), 'owner');
-    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 8, userRole: 0, now: duringWindow }), 'forbidden');
-    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 7, userRole: 0, now: afterWindow }), 'expired');
-    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 8, userRole: 1, now: afterWindow }), 'reviewer');
-    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 8, userRole: 2, now: afterWindow }), 'reviewer');
+    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 7, canReview: false, now: duringWindow }), 'owner');
+    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 8, canReview: false, now: duringWindow }), 'forbidden');
+    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 7, canReview: false, now: afterWindow }), 'expired');
+    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 8, canReview: true, now: afterWindow }), 'reviewer');
+    assert.equal(getPostFileDeleteAccess({ ownerId: 7, uploadedTime, userId: 8, canReview: true, now: afterWindow }), 'reviewer');
 });

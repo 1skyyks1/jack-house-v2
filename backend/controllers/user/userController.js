@@ -1,17 +1,19 @@
 const { User, Post, Badge } = require('../../models');
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
-const { ROLES } = require("../../config/roles");
 const { getBadgeImageUrl } = require('../../services/badgeStorage');
 const tournamentRatingService = require('../../services/tournament/ratingService');
+const permissionService = require('../../services/permissionService');
+const { can, resolveUserPermissions } = require('../../utils/permissions');
+const sequelize = require('../../config/db');
+const { listUserRecentScores } = require('../../services/userRecentScoreService');
 
 const USER_SELF_UPDATE_FIELDS = ['password', 'qq', 'discord'];
-const ADMIN_UPDATE_FIELDS = ['user_name', 'password', 'email', 'role', 'status', 'osu_uid', 'avatar', 'qq', 'discord'];
+const ADMIN_UPDATE_FIELDS = ['user_name', 'password', 'email', 'status', 'osu_uid', 'avatar', 'qq', 'discord'];
 const PUBLIC_USER_DETAIL_FIELDS = [
     'user_id',
     'user_name',
     'avatar',
-    'role',
     'status',
     'osu_uid',
     'qq',
@@ -29,14 +31,6 @@ const pickDefined = (source, fields) => {
     }, {});
 };
 
-const normalizeRole = (role) => {
-    if (role === undefined || role === null || role === '') {
-        return undefined;
-    }
-    const value = Number(role);
-    return Object.values(ROLES).includes(value) ? value : undefined;
-};
-
 const parsePagination = (query, { defaultPageSize = 20, maxPageSize = 50 } = {}) => {
     const page = Math.max(parseInt(query.page, 10) || 1, 1);
     const requestedPageSize = parseInt(query.pageSize, 10) || defaultPageSize;
@@ -48,11 +42,10 @@ const parsePagination = (query, { defaultPageSize = 20, maxPageSize = 50 } = {})
     };
 };
 
-const createUserRecord = async ({ user_name, password, email, role = ROLES.USER, status = 0, osu_uid, avatar }) => {
+const createUserRecord = async ({ user_name, password, email, status = 0, osu_uid, avatar }) => {
     const data = {
         user_name,
         email,
-        role: normalizeRole(role) ?? ROLES.USER,
         status,
         osu_uid,
         avatar
@@ -77,7 +70,7 @@ const createUser = async (req, res) => {
 
 // 获取所有用户
 const getUsers = async (req, res) => {
-    const { search } = req.query;
+    const { search, role } = req.query;
     const { page, limit, offset } = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 50 });
     try {
         const whereCondition = {};
@@ -86,17 +79,45 @@ const getUsers = async (req, res) => {
                 [Op.like]: `%${search}%`
             };
         }
-        const { count, rows } = await User.findAndCountAll(
-            {
-                attributes: { exclude: ['password'] } ,
-                where: whereCondition,
-                order: [['created_time', 'DESC']],
-                offset,
-                limit
+        if (role && role !== 'all') {
+            // 通过子查询过滤用户 ID，避免直接在 include.roles 加 where 导致用户持有的其他角色被意外过滤
+            if (role === 'none') {
+                whereCondition.user_id = {
+                    [Op.notIn]: sequelize.literal('(SELECT DISTINCT user_id FROM user_roles)')
+                };
+            } else {
+                whereCondition.user_id = {
+                    [Op.in]: sequelize.literal(`(
+                        SELECT ur.user_id
+                        FROM user_roles ur
+                        INNER JOIN role r ON ur.role_id = r.role_id
+                        WHERE r.role_code = ${sequelize.escape(role)}
+                    )`)
+                };
             }
-        );
+        }
+        const findOptions = {
+            attributes: can(req, 'users') ? { exclude: ['password'] } : PUBLIC_USER_DETAIL_FIELDS,
+            where: whereCondition,
+            order: [['created_time', 'DESC']],
+            offset,
+            limit,
+        };
+        if (can(req, 'users')) {
+            findOptions.include = permissionService.USER_ROLES_INCLUDE;
+            findOptions.distinct = true;
+        }
+        const { count, rows } = await User.findAndCountAll(findOptions);
+        const data = rows.map(user => {
+            const json = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
+            if (can(req, 'users')) {
+                const resolved = resolveUserPermissions(user);
+                json.roles = resolved.roles;
+            }
+            return json;
+        });
         const totalPages = Math.ceil(count / limit);
-        res.status(200).json({ data: rows, page, pageSize: limit, totalPages, total: count });
+        res.status(200).json({ data, page, pageSize: limit, totalPages, total: count });
     } catch (err) {
         res.status(500).json({ message: req.t('user.listFailed') });
     }
@@ -135,14 +156,15 @@ const getUserById = async (req, res) => {
     try {
         const requestedUserId = Number(req.params.user_id);
         const isSelf = Number(req.user?.user_id) === requestedUserId;
-        const canViewPrivateFields = isSelf || req.user?.role === ROLES.ADMIN;
+        const canViewPrivateFields = isSelf || can(req, 'users');
         const user = await User.findByPk(req.params.user_id, {
             attributes: canViewPrivateFields ? { exclude: ['password'] } : PUBLIC_USER_DETAIL_FIELDS,
             include: [
+                permissionService.USER_ROLES_INCLUDE[0],
                 {
                     model: Badge,
                     as: 'badges',
-                    through: { attributes: [] }
+                    through: { attributes: [User.associations.badges.through.model._timestampAttributes.createdAt] }
                 }
             ]
         });
@@ -152,8 +174,12 @@ const getUserById = async (req, res) => {
 
         // 获取badge
         const userData = user.toJSON();
+        userData.roles = resolveUserPermissions(user).roles;
         if (userData.badges && userData.badges.length > 0) {
             const signedBadge = userData.badges.map(async (badge) => {
+                const timestamp = User.associations.badges.through.model._timestampAttributes.createdAt;
+                badge.acquired_at = badge.user_badges?.[timestamp] ?? badge.user_badges?.created_time ?? null;
+                delete badge.user_badges;
                 const signedUrl = await getBadgeImageUrl(badge);
                 delete badge.minio_img_name;
                 if (badge.url) {
@@ -162,7 +188,8 @@ const getUserById = async (req, res) => {
                 badge.signedUrl = signedUrl;
                 return badge;
             });
-            userData.badges = await Promise.all(signedBadge);
+            userData.badges = (await Promise.all(signedBadge)).sort((a, b) =>
+                (Date.parse(b.acquired_at) || 0) - (Date.parse(a.acquired_at) || 0));
         }
         res.status(200).json({ data: userData });
     } catch (err) {
@@ -185,75 +212,87 @@ const getUserTournamentExperiences = async (req, res) => {
     }
 };
 
-// 更新用户
+// 更新用户。只有超级管理员可以修改授权；用户管理不能接管其他后台账号。
 const updateUser = async (req, res) => {
-    const user_id = req.user.user_id;
-    const role = req.user.role;
     try {
-        const user = await User.findByPk(req.params.user_id);
-        if (!user) {
-            return res.status(404).json({ message: req.t('user.notFound') });
-        }
-        const isAdmin = role === ROLES.ADMIN;
-        const isOwner = user.user_id === user_id;
-        if (isAdmin || isOwner) {
-            const allowedFields = isAdmin ? ADMIN_UPDATE_FIELDS : USER_SELF_UPDATE_FIELDS;
-            const updateData = pickDefined(req.body, allowedFields);
-
-            if (Object.prototype.hasOwnProperty.call(updateData, 'role')) {
-                const normalizedRole = normalizeRole(updateData.role);
-                if (normalizedRole === undefined) {
-                    delete updateData.role;
-                } else {
-                    updateData.role = normalizedRole;
-                }
+        await sequelize.transaction(async transaction => {
+            const user = await User.findByPk(req.params.user_id, {
+                include: permissionService.USER_ROLES_INCLUDE,
+                transaction,
+                lock: transaction.LOCK.UPDATE,
+            });
+            if (!user) throw Object.assign(new Error(req.t('user.notFound')), { status: 404 });
+            const isOwner = Number(user.user_id) === Number(req.user.user_id);
+            const isManager = can(req, 'users');
+            const isSuperAdmin = can(req, '*');
+            const targetPermissions = await permissionService.getUserPermissions(user);
+            if ((!isOwner && !isManager) || (!isOwner && !isSuperAdmin && targetPermissions.permissions.length)) {
+                throw Object.assign(new Error(req.t('user.noPermission')), { status: 403 });
             }
-
-            if (updateData.password) {
-                updateData.password = await bcrypt.hash(updateData.password, 10);
-            } else {
-                delete updateData.password;
-            }
-
-            await user.update(updateData);
-            res.status(200).json({ message: req.t('user.updateSuccess') });
-        } else {
-            res.status(403).json({ message: req.t('user.noPermission') });
-        }
+            const updateData = pickDefined(req.body, isManager ? ADMIN_UPDATE_FIELDS : USER_SELF_UPDATE_FIELDS);
+            if (updateData.password) updateData.password = await bcrypt.hash(updateData.password, 10);
+            else delete updateData.password;
+            await user.update(updateData, { transaction });
+        });
+        res.status(200).json({ message: req.t('user.updateSuccess') });
     } catch (err) {
-        res.status(500).json({ message: req.t('user.updateFailed') });
+        res.status(err.status || 500).json({ message: err.status ? err.message : req.t('user.updateFailed') });
     }
 };
 
-// 删除用户
 const deleteUser = async (req, res) => {
     try {
-        const user = await User.findByPk(req.params.user_id);
-        if (!user) {
-            return res.status(404).json({ message: req.t('user.notFound') });
-        }
-        await user.destroy();
+        await sequelize.transaction(async transaction => {
+            const user = await User.findByPk(req.params.user_id, {
+                include: permissionService.USER_ROLES_INCLUDE,
+                transaction,
+                lock: transaction.LOCK.UPDATE,
+            });
+            if (!user) throw Object.assign(new Error(req.t('user.notFound')), { status: 404 });
+            const targetPermissions = await permissionService.getUserPermissions(user);
+            if (!can(req, 'users') || (!can(req, '*') && targetPermissions.permissions.length)) {
+                throw Object.assign(new Error(req.t('user.noPermission')), { status: 403 });
+            }
+            if (targetPermissions.isSuperAdmin) {
+                const hasOther = await permissionService.hasOtherSuperAdmin(user.user_id, transaction);
+                if (!hasOther) {
+                    throw Object.assign(new Error('系统至少保留一个有效超级管理员'), { status: 400 });
+                }
+            }
+            await user.destroy({ transaction });
+        });
         res.status(200).json({ message: req.t('user.deleteSuccess') });
     } catch (err) {
-        res.status(500).json({ message: req.t('user.deleteFailed') });
+        res.status(err.status || 500).json({ message: err.status ? err.message : req.t('user.deleteFailed') });
+    }
+};
+
+const getUserRecentScores = async (req, res) => {
+    try {
+        const userId = Number(req.params.user_id);
+        if (!Number.isSafeInteger(userId) || userId <= 0) return res.status(400).json({ message: req.t('user.notFound') });
+        const user = await User.findByPk(userId, { attributes: ['user_id'] });
+        if (!user) return res.status(404).json({ message: req.t('user.notFound') });
+        res.status(200).json(await listUserRecentScores(userId, req.query));
+    } catch (err) {
+        res.status(500).json({ message: req.t('user.getFailed') });
     }
 };
 
 // 根据token获取用户信息
 const getUserInfo = async (req, res) => {
-    const user_id = req.user.user_id;
     try {
-        const user = await User.findByPk(user_id, {
-            attributes: { exclude: ['password'] }
-        });
-        if (!user) {
-            return res.status(404).json({ message: req.t('user.notFound') });
-        }
-        res.status(200).json({ data: user });
+        // checkAuth 已经加载并验证了用户及其角色，直接复用，避免身份接口重复查库。
+        const userData = req.user.toJSON();
+        // 纵深防御：即使未来鉴权查询字段调整，也绝不向客户端返回密码哈希。
+        delete userData.password;
+        userData.roles = req.userRoles || [];
+        userData.permissions = req.userPermissions ? Array.from(req.userPermissions) : [];
+        res.status(200).json({ data: userData });
     } catch (error) {
         res.status(500).json({ message: req.t('user.getFailed') });
     }
-}
+};
 
 module.exports = {
     createUser,
@@ -262,6 +301,7 @@ module.exports = {
     searchUsers,
     getUserById,
     getUserTournamentExperiences,
+    getUserRecentScores,
     updateUser,
     deleteUser,
     getUserInfo,
