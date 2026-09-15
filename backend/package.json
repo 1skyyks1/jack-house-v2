@@ -28,7 +28,6 @@
     "test": "node --test test/*.test.js"
   },
   "author": "",
-  "license": "ISC",
   "description": "",
   "dependencies": {
     "@jack-house-analytics/server-core": "file:../../.packed/jack-house-analytics/jack-house-analytics-server-core-0.1.2.tgz",
