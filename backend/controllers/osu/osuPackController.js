@@ -113,13 +113,6 @@ exports.updatePackFromOsu = async (req, res) => {
             return res.status(404).json({ message: req.t('pack.notFound') });
         }
 
-        if (
-            existingPack.updated_time &&
-            new Date(existingPack.updated_time).toDateString() === new Date().toDateString()
-        ) {
-            return res.status(429).json({ message: req.t('pack.updateTooFrequent') });
-        }
-
         const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET);
         const beatmapset = await api.getBeatmapset(beatmapsetId);
 

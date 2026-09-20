@@ -65,7 +65,7 @@ exports.getFeedbackList = async (req, res) => {
         const { count, rows } = await PackFeedback.findAndCountAll({
             where: status === null ? {} : { status },
             include: [
-                { model: Pack, as: 'pack', attributes: ['pack_id', 'title', 'title_unicode', 'artist', 'artist_unicode'] },
+                { model: Pack, as: 'pack', attributes: ['pack_id', 'title', 'title_unicode', 'artist', 'artist_unicode', 'osu_bid'] },
                 { model: User, as: 'user', attributes: ['user_id', 'user_name'] },
             ],
             limit: pageSize,

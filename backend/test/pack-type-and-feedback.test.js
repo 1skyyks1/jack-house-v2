@@ -2,8 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { getAllowedTagCategories } = require('../utils/packTag');
 const packRoute = require('../routes/packRoute');
+const PackController = require('../controllers/pack/packController');
 const postFileRoute = require('../routes/postFileRoute');
-const { PostFile, PostFileComment, PackFeedback } = require('../models');
+const { PostFile, PostFileComment, Pack, PackFeedback } = require('../models');
 
 test('getAllowedTagCategories returns expected categories for each pack type', () => {
     assert.deepEqual(getAllowedTagCategories(0), ['pattern', 'bpm', 'difficulty']);
@@ -38,6 +39,30 @@ test('packRoute has PATCH /:pack_id/type route registered', () => {
         (layer) => layer.route && layer.route.path === '/:pack_id/type' && layer.route.methods.patch
     );
     assert.ok(route, 'PATCH /:pack_id/type should be registered in packRoute');
+});
+
+test('getAllPacks filters by packId exactly', async (t) => {
+    let receivedOptions;
+    t.mock.method(Pack, 'findAndCountAll', async (options) => {
+        receivedOptions = options;
+        return { count: 1, rows: [] };
+    });
+
+    let payload;
+    const req = {
+        query: { packId: '1017', page: '1', pageSize: '10', sort: '0' },
+        t: (key) => key,
+    };
+    const res = {
+        status() { return this; },
+        json(value) { payload = value; return value; },
+    };
+
+    await PackController.getAllPacks(req, res);
+
+    assert.equal(receivedOptions.where.pack_id, 1017);
+    assert.equal(payload.total, 1);
+    assert.equal(payload.page, 1);
 });
 
 test('postFileRoute has comments routes registered', () => {

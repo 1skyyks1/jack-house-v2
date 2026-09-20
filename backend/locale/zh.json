@@ -48,7 +48,6 @@
     "createSuccess": "图包创建成功",
     "updateFailed": "更新失败",
     "updateSuccess": "更新成功",
-    "updateTooFrequent": "该图包今天已更新，请明天再试",
     "deleteSuccess": "图包删除成功",
     "deleteFailed": "删除图包失败",
     "beatmapNotFound": "未找到该图包中的指定难度",

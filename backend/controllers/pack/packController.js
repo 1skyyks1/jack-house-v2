@@ -49,10 +49,10 @@ exports.createPack = async (req, res) => {
 
 // 获取图包列表（带筛选和分页）
 exports.getAllPacks = async (req, res) => {
-    const { page, pageSize, searchKeys, tags, type, graveyard, ranked, featured, loved, recommended, original, sort } = req.query;
+    const { page, pageSize, searchKeys, bid, packId, tags, type, graveyard, ranked, featured, loved, recommended, original, sort, pending, osuStatus } = req.query;
     const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
     const limit = parseInt(pageSize, 10);
-    const keyword = decodeURIComponent(searchKeys || '');
+    const keyword = decodeURIComponent(searchKeys || '').trim();
     const sortNum = Number(sort);
     try {
         const findOptions = {
@@ -77,16 +77,43 @@ exports.getAllPacks = async (req, res) => {
             ]
         };
 
-        if (searchKeys) {
-            findOptions.where = {
-                [Op.or]: [
-                    { title: { [Op.like]: `%${keyword}%` } },
-                    { title_unicode: { [Op.like]: `%${keyword}%` } },
-                    { artist: { [Op.like]: `%${keyword}%` } },
-                    { artist_unicode: { [Op.like]: `%${keyword}%` } },
-                    { creator: { [Op.like]: `%${keyword}%` } }
-                ]
-            };
+        // 支持站内图包 ID 精确筛选
+        if (packId) {
+            const packIdNum = Number.parseInt(packId, 10);
+            if (Number.isInteger(packIdNum) && packIdNum > 0) {
+                findOptions.where.pack_id = packIdNum;
+            }
+        }
+
+        // 支持精确 bid 参数筛选
+        if (bid) {
+            const bidNum = Number.parseInt(bid, 10);
+            if (Number.isInteger(bidNum) && bidNum > 0) {
+                findOptions.where.osu_bid = bidNum;
+            }
+        }
+
+        // 关键词搜索（支持标题、曲师、谱师、osu_bid 及 pack_id）
+        if (keyword) {
+            const orConditions = [
+                { title: { [Op.like]: `%${keyword}%` } },
+                { title_unicode: { [Op.like]: `%${keyword}%` } },
+                { artist: { [Op.like]: `%${keyword}%` } },
+                { artist_unicode: { [Op.like]: `%${keyword}%` } },
+                { creator: { [Op.like]: `%${keyword}%` } }
+            ];
+
+            // 提取纯数字或 "bid: 12345" 形式中的数字，匹配 osu_bid 与 pack_id
+            const bidMatch = keyword.match(/^(?:bid[:：\s]*)?(\d+)$/i);
+            if (bidMatch) {
+                const numericValue = Number.parseInt(bidMatch[1], 10);
+                if (Number.isInteger(numericValue) && numericValue > 0) {
+                    orConditions.push({ osu_bid: numericValue });
+                    orConditions.push({ pack_id: numericValue });
+                }
+            }
+
+            findOptions.where[Op.or] = orConditions;
         }
 
         if (sortNum === 1) {
@@ -103,8 +130,15 @@ exports.getAllPacks = async (req, res) => {
         if (graveyard) statusArr.push(-2);
         if (ranked) statusArr.push(1);
         if (loved) statusArr.push(4);
+        if (pending) statusArr.push(0, -1);
+        if (osuStatus) {
+            if (osuStatus === 'ranked') statusArr.push(1);
+            else if (osuStatus === 'loved') statusArr.push(4);
+            else if (osuStatus === 'pending_wip' || osuStatus === 'pending') statusArr.push(0, -1);
+            else if (osuStatus === 'graveyard') statusArr.push(-2);
+        }
         if (statusArr.length > 0) {
-            findOptions.where.status = { [Op.in]: statusArr };
+            findOptions.where.status = { [Op.in]: Array.from(new Set(statusArr)) };
         }
 
         if (recommended === '1' || recommended === 'true') {

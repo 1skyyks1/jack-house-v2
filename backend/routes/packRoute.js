@@ -16,6 +16,14 @@ const osuScoreLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+const osuPackRefreshLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    keyGenerator: (req) => String(req.user.user_id),
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 // 后台查看及处理图包反馈 (需要 packFeedback 权限，需放在 /:pack_id 之前)
 router.get('/feedback', checkAuth(), requirePermission(PERMISSIONS.PACK_FEEDBACK), PackFeedbackController.getFeedbackList);
 router.patch('/feedback/:feedback_id', checkAuth(), requirePermission(PERMISSIONS.PACK_FEEDBACK), PackFeedbackController.updateFeedbackStatus);
@@ -63,6 +71,6 @@ router.get('/osu/:bid', checkAuth(), OsuPackController.beatmapsetDetail);
 router.post('/osu/:bid', checkAuth(), OsuPackController.packFromOsu);
 
 // 从osu更新图包信息
-router.put('/osu/:bid', checkAuth(), requirePermission(PERMISSIONS.PACK_TAGS, 'pack:manage'), OsuPackController.updatePackFromOsu);
+router.put('/osu/:bid', checkAuth(), requirePermission(PERMISSIONS.PACK_TAGS, 'pack:manage'), osuPackRefreshLimiter, OsuPackController.updatePackFromOsu);
 
 module.exports = router;
