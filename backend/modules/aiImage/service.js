@@ -9,7 +9,8 @@ const AiImageJob = require('./models/AiImageJob');
 const AiImageRuntime = require('./models/AiImageRuntime');
 const upstreamClient = require('./upstreamClient');
 
-const DEFAULT_MODEL = 'gpt-image-2';
+const DEFAULT_MODEL = 'gpt-image-2.5-flare';
+const ALLOWED_MODELS = ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'];
 const ACTIVE_STATUSES = ['submitting', 'pending', 'running'];
 const TERMINAL_STATUSES = ['done', 'failed', 'cancelled', 'expired'];
 const REMOTE_STATUSES = new Set(['pending', 'running', 'done', 'failed']);
@@ -58,7 +59,7 @@ const submitJob = async ({ userId, body, images = [], mask = null, sourceIp, use
     }
 
     const input = validateSubmission({ body, images, mask });
-    const model = getModel();
+    const model = input.model;
     const referenceMetadata = await Promise.all(images.map(buildFileMetadata));
     const maskMetadata = mask ? await buildFileMetadata(mask) : null;
     const reservation = await reserveJob({
@@ -239,6 +240,8 @@ const getUserConfig = async ({ userId, access }) => {
     const used = Number(usedRaw || 0);
 
     return {
+        allowedModels: [...ALLOWED_MODELS],
+        defaultModel: getModel(),
         allowedSizes: getAllowedSizes(),
         quota: {
             date: quotaDate,
@@ -539,7 +542,12 @@ const validateSubmission = ({ body = {}, images, mask }) => {
         throw new AiImageError(400, 'invalid_size', 'Image size is not allowed');
     }
 
-    return { idempotencyKey, prompt, requestType, size };
+    const model = body.model === undefined ? getModel() : body.model;
+    if (typeof model !== 'string' || !ALLOWED_MODELS.includes(model)) {
+        throw new AiImageError(400, 'invalid_model', 'Image model is not allowed');
+    }
+
+    return { idempotencyKey, model, prompt, requestType, size };
 };
 
 const buildFileMetadata = async (file) => ({
@@ -565,6 +573,7 @@ const serializeJob = (job, remote = null, { includeInternal = false } = {}) => {
         id: plain.public_id,
         requestType: plain.request_type,
         prompt: plain.prompt,
+        model: plain.model,
         size: plain.size,
         referenceCount: plain.reference_count,
         hasMask: Boolean(plain.has_mask),
@@ -657,7 +666,10 @@ const isSupportedSizeToken = (size) => {
     return Number(match[1]) * Number(match[2]) <= MAX_IMAGE_PIXELS;
 };
 
-const getModel = () => String(process.env.AI_IMAGE_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+const getModel = () => {
+    const configured = String(process.env.AI_IMAGE_MODEL || '').trim();
+    return ALLOWED_MODELS.includes(configured) ? configured : DEFAULT_MODEL;
+};
 
 const getGlobalConcurrency = () => Math.min(4, toPositiveInt(process.env.AI_IMAGE_GLOBAL_CONCURRENCY, 4));
 

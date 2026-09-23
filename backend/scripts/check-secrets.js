@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const repoRoot = path.resolve(root, '..', '..');
+const repoRoot = path.resolve(root, '..');
 
 const ignoredDirs = new Set([
     '.git',

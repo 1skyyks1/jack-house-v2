@@ -133,5 +133,6 @@ module.exports = {
     EventStage,
     EventScore,
     RichTextAsset,
-    RichTextAssetReference
+    RichTextAssetReference,
+    Notice: require('./notice')
 };

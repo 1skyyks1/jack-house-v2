@@ -54,7 +54,7 @@ test('daily limits match user, organizer, and administrator roles', () => {
     assert.equal(service.getDailyLimit({ isSuperAdmin: true, roles: ['admin'] }), null);
 });
 
-test('all documented gpt-image-2 size presets are enabled by default', (t) => {
+test('all documented image size presets are enabled by default', (t) => {
     const originalSizes = process.env.AI_IMAGE_ALLOWED_SIZES;
     delete process.env.AI_IMAGE_ALLOWED_SIZES;
     t.after(() => {
@@ -90,12 +90,14 @@ test('synchronizer polls while active and fully stops while idle', (t) => {
     assert.equal(service.getSynchronizerDelay(0), null);
 });
 
-test('user config omits model, concurrency, and retention implementation details', async (t) => {
+test('user config exposes model choices without concurrency or retention implementation details', async (t) => {
     patchMethod(t, AiImageJob, 'sum', async () => 2);
     patchMethod(t, AiImageJob, 'findOne', async () => null);
 
     const config = await service.getUserConfig({ userId: 7, access: { roles: [] } });
     assert.equal(config.quota.used, 2);
+    assert.deepEqual(config.allowedModels, ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']);
+    assert.equal(config.defaultModel, 'gpt-image-2.5-flare');
     assert.equal(Object.hasOwn(config, 'model'), false);
     assert.equal(Object.hasOwn(config, 'concurrency'), false);
     assert.equal(Object.hasOwn(config, 'imageRetention'), false);
@@ -227,7 +229,7 @@ test('accepted native generation stores the mapping without persisting result UR
     });
     patchMethod(t, upstreamClient, 'submitGeneration', async (input) => {
         assert.equal(input.idempotencyKey, '1234567890abcdef');
-        assert.equal(input.model, 'gpt-image-2');
+        assert.equal(input.model, 'gpt-image-2.5-flare');
         return {
             id: 'img_123',
             status: 'pending',
@@ -249,6 +251,8 @@ test('accepted native generation stores the mapping without persisting result UR
     });
 
     assert.equal(createdJob.upstream_job_id, 'img_123');
+    assert.equal(createdJob.model, 'gpt-image-2.5-flare');
+    assert.equal(result.model, 'gpt-image-2.5-flare');
     assert.equal(Object.hasOwn(createdJob, 'result_urls'), false);
     assert.deepEqual(result.resultUrls, ['https://should-not-be-saved.example/image.png']);
     assert.equal(Object.hasOwn(result, 'upstreamJobId'), false);
@@ -281,7 +285,7 @@ test('serialized user jobs expose temporary image URLs without leaking internal 
 
     assert.deepEqual(serialized.resultUrls, ['https://image.example.test/result.png']);
     assert.equal(Object.hasOwn(serialized, 'upstreamJobId'), false);
-    assert.equal(Object.hasOwn(serialized, 'model'), false);
+    assert.equal(serialized.model, 'gpt-image-2');
     assert.equal(Object.hasOwn(serialized, 'costUsd'), false);
     assert.equal(Object.hasOwn(serialized, 'errorMessage'), false);
 });
@@ -357,4 +361,74 @@ test('non-superadmin RBAC roles cannot receive unlimited quota', async (t) => {
         userId: 7,
         body: { idempotencyKey: '1234567890abcdef', prompt: 'test', requestType: 'generation', size: '1024x1024' },
     }), (error) => error.code === 'daily_quota_exhausted' && error.status === 429);
+});
+
+test('model validation allows only Flare and Sunburst and defaults legacy callers to Flare', (t) => {
+    const originalModel = process.env.AI_IMAGE_MODEL;
+    t.after(() => {
+        if (originalModel === undefined) delete process.env.AI_IMAGE_MODEL;
+        else process.env.AI_IMAGE_MODEL = originalModel;
+    });
+    const body = {
+        idempotencyKey: '1234567890abcdef',
+        prompt: 'model selection',
+        requestType: 'generation',
+        size: '1024x1024',
+    };
+    const validate = (patch = {}) => service.validateSubmission({ body: { ...body, ...patch }, images: [], mask: null });
+    delete process.env.AI_IMAGE_MODEL;
+    assert.equal(validate().model, 'gpt-image-2.5-flare');
+    process.env.AI_IMAGE_MODEL = 'gpt-image-2';
+    assert.equal(validate().model, 'gpt-image-2.5-flare');
+    for (const model of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+        assert.equal(validate({ model }).model, model);
+    }
+    for (const model of ['gpt-image-2', 'gpt-image-2.5', '', null, ['gpt-image-2.5-flare'], { id: 'gpt-image-2.5-flare' }]) {
+        assert.throws(() => validate({ model }), (error) => error.status === 400 && error.code === 'invalid_model');
+    }
+});
+
+for (const model of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+    for (const requestType of ['generation', 'edit']) {
+        test(requestType + ' persists and forwards selected model ' + model, async (t) => {
+            mockReservationDatabase(t);
+            let createdJob;
+            patchMethod(t, AiImageJob, 'create', async (values) => {
+                createdJob = createMockJob({ ai_image_job_id: 1, created_time: new Date(), ...values });
+                return createdJob;
+            });
+            const images = requestType === 'edit' ? [{
+                path: __filename,
+                originalname: 'reference.png',
+                mimetype: 'image/png',
+                size: 1,
+            }] : [];
+            let submitCalls = 0;
+            const submit = async (input) => {
+                submitCalls += 1;
+                assert.equal(input.model, model);
+                if (requestType === 'edit') assert.deepEqual(input.images, images);
+                return { id: 'img_selected', status: 'pending' };
+            };
+            patchMethod(t, upstreamClient, 'submitGeneration', requestType === 'generation' ? submit : async () => assert.fail('Wrong submission mode'));
+            patchMethod(t, upstreamClient, 'submitEdit', requestType === 'edit' ? submit : async () => assert.fail('Wrong submission mode'));
+            const result = await service.submitJob({
+                userId: 7,
+                body: { idempotencyKey: '1234567890abcdef', prompt: 'selected model', requestType, size: '1024x1024', model },
+                images,
+            });
+            assert.equal(submitCalls, 1);
+            assert.equal(createdJob.model, model);
+            assert.equal(result.model, model);
+        });
+    }
+}
+
+test('unsupported models are rejected before reserving quota or submitting upstream', async (t) => {
+    patchMethod(t, sequelize, 'transaction', async () => assert.fail('Invalid model reserved quota'));
+    patchMethod(t, upstreamClient, 'submitGeneration', async () => assert.fail('Invalid model submitted upstream'));
+    await assert.rejects(service.submitJob({
+        userId: 7,
+        body: { idempotencyKey: '1234567890abcdef', prompt: 'test', requestType: 'generation', size: '1024x1024', model: 'gpt-image-2' },
+    }), (error) => error.status === 400 && error.code === 'invalid_model');
 });

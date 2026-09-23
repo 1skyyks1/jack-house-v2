@@ -33,7 +33,7 @@ test('native generation uses the task envelope and forwards idempotency', async 
 
     const result = await upstreamClient.submitGeneration({
         idempotencyKey: '1234567890abcdef',
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         prompt: 'neon city',
         size: '16:9@4k',
     });
@@ -45,7 +45,7 @@ test('native generation uses the task envelope and forwards idempotency', async 
     assert.equal(requests[0].headers['idempotency-key'], '1234567890abcdef');
     assert.deepEqual(requests[0].body, {
         kind: 'image',
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         input: {
             prompt: 'neon city',
             size: '16:9',
@@ -74,7 +74,7 @@ test('an ambiguous submit is retried once with the same idempotency key and body
 
     const result = await upstreamClient.submitGeneration({
         idempotencyKey: 'retry1234567890ab',
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-flare',
         prompt: 'retry safely',
         size: 'auto@2k',
     });
@@ -112,11 +112,12 @@ test('native edit encodes references and mask as typed data URIs', async (t) => 
         idempotencyKey: 'abcdef1234567890',
         images: [{ mimetype: 'image/png', path: imagePath }],
         mask: { mimetype: 'image/png', path: maskPath },
-        model: 'gpt-image-2',
+        model: 'gpt-image-2.5-sunburst',
         prompt: 'replace the sky',
         size: '2k',
     });
 
+    assert.equal(payload.model, 'gpt-image-2.5-sunburst');
     assert.deepEqual(payload.input, {
         prompt: 'replace the sky',
         resolution: '2k',

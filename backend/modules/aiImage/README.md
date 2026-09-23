@@ -14,7 +14,11 @@ Module responsibilities:
 New submissions use `/v1/tasks` and forward the Jack House idempotency key to the
 upstream API. Queries fall back to the legacy compatibility host only when a task
 is not found by the native API, allowing unfinished pre-migration jobs to finish.
-The selected image model is configured with `AI_IMAGE_MODEL`.
+Users can select `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst` for generation
+and editing. `/tool/aimg/config` exposes `allowedModels` and `defaultModel`, and
+submissions accept a `model` field. `AI_IMAGE_MODEL` configures the default;
+missing or unsupported values fall back to `gpt-image-2.5-flare`. Submissions
+without a model use that default, while unsupported model selections are rejected.
 
 Generated images and upstream result URLs are deliberately not persisted. The rest
 of the backend only mounts `router` and calls `start()` from `index.js`.

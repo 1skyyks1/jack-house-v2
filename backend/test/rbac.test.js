@@ -59,6 +59,7 @@ for (const [file, method, path, permission] of [
     ['badgeRoute', 'post', '/', 'badges'],
     ['eventRoute', 'post', '/', 'events'],
     ['packRoute', 'patch', '/:pack_id/recommendation', 'packTags'],
+    ['noticeRoute', 'post', '/', 'announcement'],
     ['tournamentRoute', 'post', '/', 'tournaments'],
 ]) {
     test(`${permission} grants only its intended route access`, async t => {

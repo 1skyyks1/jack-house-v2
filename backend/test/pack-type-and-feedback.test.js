@@ -61,6 +61,8 @@ test('getAllPacks filters by packId exactly', async (t) => {
     await PackController.getAllPacks(req, res);
 
     assert.equal(receivedOptions.where.pack_id, 1017);
+    const mapsInclude = receivedOptions.include.find((include) => include.as === 'maps');
+    assert.deepEqual(mapsInclude.attributes, ['map_id', 'rating', 'version', 'key_count']);
     assert.equal(payload.total, 1);
     assert.equal(payload.page, 1);
 });

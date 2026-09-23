@@ -15,6 +15,7 @@ const roleRoutes = require('./routes/roleRoute');
 const tournamentRoutes = require('./routes/tournamentRoute');
 const uploadRoutes = require('./routes/uploadRoute');
 const toolRoutes = require('./routes/toolRoute');
+const noticeRoutes = require('./routes/noticeRoute');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -295,6 +296,7 @@ app.use('/t', commonLimiter, tournamentRoutes)
 app.use('/upload', commonLimiter, uploadRoutes)
 app.use('/tool', toolRoutes)
 app.use('/rewards', commonLimiter, rewardsRoutes)
+app.use('/notice', commonLimiter, noticeRoutes)
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${port}`);

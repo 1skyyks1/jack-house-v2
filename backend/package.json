@@ -27,6 +27,7 @@
     "backfill:tournament-status": "node scripts/backfill-tournament-status.js",
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "migrate:rewards": "node scripts/migrate-rewards.js",
+    "migrate:notice": "node scripts/migrate-notice.js",
     "test": "node --test test/*.test.js"
   },
   "author": "",

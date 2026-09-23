@@ -74,6 +74,11 @@ exports.getAllPacks = async (req, res) => {
                     as: 'user',
                     attributes: ['user_id', 'user_name']
                 },
+                {
+                    model: PackMap,
+                    as: 'maps',
+                    attributes: ['map_id', 'rating', 'version', 'key_count']
+                }
             ]
         };
 

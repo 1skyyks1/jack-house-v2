@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS `ai_image_job` (
   `idempotency_key` VARCHAR(64) NOT NULL,
   `request_type` VARCHAR(16) NOT NULL DEFAULT 'generation',
   `prompt` LONGTEXT NOT NULL,
-  `model` VARCHAR(64) NOT NULL DEFAULT 'gpt-image-2',
+  `model` VARCHAR(64) NOT NULL DEFAULT 'gpt-image-2.5-flare',
   `size` VARCHAR(32) NOT NULL DEFAULT '1024x1024',
   `reference_count` TINYINT UNSIGNED NOT NULL DEFAULT 0,
   `reference_metadata` JSON NULL,
@@ -45,3 +45,6 @@ CREATE TABLE IF NOT EXISTS `ai_image_job` (
   CONSTRAINT `fk_ai_image_job_user`
     FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+ALTER TABLE `ai_image_job`
+  ALTER COLUMN `model` SET DEFAULT 'gpt-image-2.5-flare';

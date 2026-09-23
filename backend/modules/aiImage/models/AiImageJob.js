@@ -37,7 +37,7 @@ const AiImageJob = sequelize.define('AiImageJob', {
     model: {
         type: DataTypes.STRING(64),
         allowNull: false,
-        defaultValue: 'gpt-image-2',
+        defaultValue: 'gpt-image-2.5-flare',
     },
     size: {
         type: DataTypes.STRING(32),
