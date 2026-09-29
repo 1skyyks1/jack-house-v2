@@ -1,5 +1,6 @@
-const { PostComment, User} = require('../../models');
-const { can } = require('../../utils/permissions');
+const { PostComment, User } = require('../../models');
+const { can, resolveUserPermissions } = require('../../utils/permissions');
+const permissionService = require('../../services/permissionService');
 
 // 获取指定帖子的所有评论
 exports.getCommentsByPostId = async (req, res) => {
@@ -17,17 +18,19 @@ exports.getCommentsByPostId = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['user_name', 'avatar']
+                    attributes: ['user_name', 'avatar'],
+                    include: permissionService.USER_ROLES_INCLUDE
                 }
             ]
         });
 
         const result = rows.map(comment => {
             const commentData = comment.toJSON();
-            commentData.user_name = commentData.user.user_name;
-            commentData.avatar = commentData.user.avatar
+            commentData.user_name = commentData.user ? commentData.user.user_name : null;
+            commentData.avatar = commentData.user ? commentData.user.avatar : null;
+            commentData.roles = comment.user ? resolveUserPermissions(comment.user).roles : [];
             delete commentData.user;
-            return commentData
+            return commentData;
         })
         const totalPages = Math.ceil(count / limit)
 

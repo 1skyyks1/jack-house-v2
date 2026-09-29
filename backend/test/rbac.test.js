@@ -53,6 +53,141 @@ test('only RBAC superadmins can assign roles', async t => {
     assert.equal((await authorize(t, roleRouter, 'post', '/user/:user_id', user(['*']))).passed, true);
 });
 
+test('roleRouter registers public route without auth middleware', () => {
+    const route = roleRouter.stack.find(layer => layer.route?.path === '/public' && layer.route.methods.get)?.route;
+    assert.ok(route, 'GET /public route should be registered');
+    assert.equal(route.stack.length, 1, 'GET /public should have only handler without auth middleware');
+});
+
+test('GET /roles/public returns only 4 public roles without leaking permissions, is_system, timestamps or custom roles', async t => {
+    const mockDbRoles = [
+        {
+            role_id: 1,
+            role_code: 'admin',
+            role_name: '超级管理员',
+            name_zh: '管理员',
+            name_en: 'Administrator',
+            description: '核心管理团队',
+            permissions: ['*'],
+            is_system: true,
+            created_time: '2026-01-01T00:00:00.000Z',
+            updated_time: '2026-01-02T00:00:00.000Z',
+            users: [
+                {
+                    user_id: 1,
+                    user_name: 'SuperUser',
+                    avatar: 'https://example.com/avatar1.png',
+                    status: 0,
+                    roles: [
+                        { role_code: 'admin' },
+                        { role_code: 'secret_auditor' } // 混杂的非公开角色
+                    ]
+                }
+            ]
+        },
+        {
+            role_id: 2,
+            role_code: 'organizer',
+            role_name: '活动策划',
+            name_zh: '活动策划',
+            name_en: 'Organizer',
+            description: '赛事组织',
+            permissions: ['events', 'badges'],
+            is_system: true,
+            created_time: '2026-01-01T00:00:00.000Z',
+            updated_time: '2026-01-02T00:00:00.000Z',
+            users: []
+        },
+        {
+            role_id: 3,
+            role_code: 'moderator',
+            role_name: '投稿审核',
+            name_zh: '投稿审核',
+            name_en: 'Reviewer',
+            description: '审核谱面',
+            permissions: ['posts', 'postFiles'],
+            is_system: true,
+            created_time: '2026-01-01T00:00:00.000Z',
+            updated_time: '2026-01-02T00:00:00.000Z',
+            users: []
+        },
+        {
+            role_id: 4,
+            role_code: 'pack_reviewer',
+            role_name: '叠包主理人',
+            name_zh: '叠包主理人',
+            name_en: 'Pack Curator',
+            description: '图包维护',
+            permissions: ['packTags'],
+            is_system: true,
+            created_time: '2026-01-01T00:00:00.000Z',
+            updated_time: '2026-01-02T00:00:00.000Z',
+            users: []
+        },
+        // 敏感的自定义内部角色，绝不可被公开接口返回
+        {
+            role_id: 5,
+            role_code: 'custom_security_role',
+            role_name: '内部安全员',
+            name_zh: '内部安全员',
+            name_en: 'Security Officer',
+            description: '高危审计',
+            permissions: ['internal_audit', 'db_dump'],
+            is_system: false,
+            created_time: '2026-01-01T00:00:00.000Z',
+            updated_time: '2026-01-02T00:00:00.000Z',
+            users: [{ user_id: 99, user_name: 'SecretAgent', avatar: null, status: 0, roles: [{ role_code: 'custom_security_role' }] }]
+        }
+    ];
+
+    t.mock.method(Role, 'findAll', async (options = {}) => {
+        const requestedCodes = options.where?.role_code;
+        if (Array.isArray(requestedCodes)) {
+            return mockDbRoles.filter(r => requestedCodes.includes(r.role_code));
+        }
+        return mockDbRoles;
+    });
+
+    const route = roleRouter.stack.find(layer => layer.route?.path === '/public' && layer.route.methods.get).route;
+    const handler = route.stack[0].handle;
+
+    const req = { language: 'zh', headers: {}, t: (key, fallback) => (typeof fallback === 'string' ? fallback : key) };
+    const res = response();
+
+    await handler(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.ok(Array.isArray(res.body?.data), 'data 必须为数组');
+    const returnedRoles = res.body.data;
+
+    // 1. 严格只返回 4 个公开角色
+    assert.equal(returnedRoles.length, 4, '只允许返回 4 个公开角色');
+    const returnedCodes = returnedRoles.map(r => r.role_code);
+    assert.deepEqual(returnedCodes, ['admin', 'organizer', 'moderator', 'pack_reviewer']);
+    assert.equal(returnedCodes.includes('custom_security_role'), false, '禁止返回自定义角色');
+
+    // 2. 验证每个角色对象禁止泄露权限、系统标识与时间字段
+    for (const role of returnedRoles) {
+        assert.equal('permissions' in role, false, '公开角色禁止暴露 permissions 权限');
+        assert.equal('is_system' in role, false, '公开角色禁止暴露 is_system 字段');
+        assert.equal('created_time' in role, false, '公开角色禁止暴露 created_time 字段');
+        assert.equal('updated_time' in role, false, '公开角色禁止暴露 updated_time 字段');
+        assert.equal('createdAt' in role, false, '公开角色禁止暴露 createdAt 字段');
+        assert.equal('updatedAt' in role, false, '公开角色禁止暴露 updatedAt 字段');
+
+        // 验证前端展示必要字段存在
+        assert.ok(typeof role.role_id === 'number', 'role_id 必须存在且为数字');
+        assert.ok(typeof role.role_code === 'string', 'role_code 必须存在且为字符串');
+        assert.ok(typeof role.role_name === 'string', 'role_name 必须存在且为字符串');
+        assert.ok(Array.isArray(role.members), 'members 必须为数组');
+    }
+
+    // 3. 验证成员角色列表中剔除了非公开角色
+    const adminRole = returnedRoles.find(r => r.role_code === 'admin');
+    assert.equal(adminRole.members.length, 1);
+    assert.deepEqual(adminRole.members[0].roles, ['admin'], '成员角色列表中必须剔除非公开角色');
+});
+
 for (const [file, method, path, permission] of [
     ['tagRoute', 'get', '/admin', 'packTags'],
     ['postFileRoute', 'put', '/review/:file_id', 'postFiles'],
@@ -211,6 +346,8 @@ test('PUT /roles/:role_id rejects with 409 on optimistic lock mismatch and 400 o
         updated_time: new Date('2026-01-01T00:00:00.000Z'),
         update: async () => {},
     };
+    t.mock.method(sequelize, 'transaction', async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }));
+    t.mock.method(Role, 'findAll', async () => [mockRole]);
     t.mock.method(Role, 'findByPk', async () => mockRole);
     t.mock.method(service, 'hasSuperAdminExcludingRole', async () => false);
 

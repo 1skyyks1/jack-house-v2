@@ -444,15 +444,15 @@
   },
   "rbacRole": {
     "admin": {
-      "name": "超级管理员",
+      "name": "管理员",
       "description": "拥有系统所有后台管理与操作权限"
     },
     "organizer": {
-      "name": "活动组织者",
+      "name": "活动策划",
       "description": "负责社区活动、阶段与徽章的发放和管理"
     },
     "moderator": {
-      "name": "投稿审核员",
+      "name": "投稿审核",
       "description": "负责社区主站帖子、附件与用户反馈的审核处理"
     },
     "pack_reviewer": {

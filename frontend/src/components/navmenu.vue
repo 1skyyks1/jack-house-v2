@@ -187,6 +187,7 @@ const { t } = useI18n();
 const route = useRoute();
 const isHomePage = computed(() => route.path === '/');
 const isDark = useDark();
+const toggleDark = useToggle(isDark);
 const breakpoints = useBreakpoints({
   mobile: 860,
 })
@@ -242,7 +243,7 @@ const openDrawer = () => {
 }
 
 const toggleDarkMode = () => {
-  useToggle(isDark)();
+  toggleDark();
 };
 
 const getUserInfo = async (userId) => {

@@ -12,6 +12,77 @@ const sequelize = require('../config/db');
  * 用户管理权限可读取；角色分配和权限编辑仅允许超级管理员
  */
 
+// 四个公开角色标识代码
+const PUBLIC_ROLE_CODES = ['admin', 'organizer', 'moderator', 'pack_reviewer'];
+
+// 0. 公开角色展示列表（免鉴权，供身份介绍页查看职责及属于各身份的用户）
+router.get('/public', async (req, res) => {
+    try {
+        const roles = await Role.findAll({
+            where: {
+                role_code: PUBLIC_ROLE_CODES
+            },
+            attributes: ['role_id', 'role_code', 'role_name', 'name_zh', 'name_en', 'description'],
+            order: [['role_id', 'ASC']],
+            include: [{
+                model: User,
+                as: 'users',
+                attributes: ['user_id', 'user_name', 'avatar', 'status'],
+                where: { status: 0 },
+                required: false,
+                through: { attributes: [] },
+                include: [{
+                    model: Role,
+                    as: 'roles',
+                    attributes: ['role_code'],
+                    through: { attributes: [] }
+                }]
+            }]
+        });
+
+        const isEn = req.language === 'en' || (req.headers['accept-language'] || '').toLowerCase().startsWith('en');
+        // 严格白名单构造返回对象，禁止暴露 permissions、is_system、时间字段及自定义角色
+        const data = roles
+            .filter(role => PUBLIC_ROLE_CODES.includes(role.role_code))
+            .map(role => {
+                const defaultZh = req.t ? req.t(`rbacRole.${role.role_code}.name`, role.role_name) : role.role_name;
+                const defaultEn = req.t && req.t(`rbacRole.${role.role_code}.name`, { lng: 'en' }) !== `rbacRole.${role.role_code}.name`
+                    ? req.t(`rbacRole.${role.role_code}.name`, { lng: 'en' })
+                    : role.role_name;
+                const nameZh = role.name_zh || defaultZh;
+                const nameEn = role.name_en || defaultEn;
+                const localizedName = isEn ? (nameEn || nameZh || defaultEn) : (nameZh || nameEn || defaultZh);
+                const localizedDescription = req.t ? req.t(`rbacRole.${role.role_code}.description`, role.description || '') : (role.description || '');
+
+                const rawUsers = role.users || [];
+                const members = rawUsers.map(u => ({
+                    user_id: u.user_id,
+                    user_name: u.user_name,
+                    avatar: u.avatar,
+                    roles: (u.roles || [])
+                        .map(r => r.role_code)
+                        .filter(code => PUBLIC_ROLE_CODES.includes(code))
+                }));
+
+                return {
+                    role_id: role.role_id,
+                    role_code: role.role_code,
+                    role_name: role.role_name,
+                    name_zh: nameZh,
+                    name_en: nameEn,
+                    localized_name: localizedName,
+                    localized_description: localizedDescription,
+                    members
+                };
+            });
+
+        res.json({ data });
+    } catch (err) {
+        console.error('[RoleRoute] Failed to get public roles:', err);
+        res.status(500).json({ message: '获取角色信息失败' });
+    }
+});
+
 // 1. 获取所有角色列表（支持根据请求语言本地化展示名称与描述）
 router.get('/', checkAuth(), requirePermission(PERMISSIONS.USERS), async (req, res) => {
     try {
