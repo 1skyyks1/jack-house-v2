@@ -28,6 +28,10 @@ const osuPackRefreshLimiter = rateLimit({
 router.get('/feedback', checkAuth(), requirePermission(PERMISSIONS.PACK_FEEDBACK), PackFeedbackController.getFeedbackList);
 router.patch('/feedback/:feedback_id', checkAuth(), requirePermission(PERMISSIONS.PACK_FEEDBACK), PackFeedbackController.updateFeedbackStatus);
 
+// JHBot protected durable event feed (before /:pack_id).
+const { authorize: botEventAuth, createReader: createBotEventReader } = require('../services/botPackEvents');
+router.get('/bot/events', botEventAuth, createBotEventReader(require('../config/db')));
+
 // 获取所有包
 router.get('/', PackController.getAllPacks);
 

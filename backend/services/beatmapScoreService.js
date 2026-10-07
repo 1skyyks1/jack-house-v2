@@ -27,7 +27,7 @@ const getOsuScoreId = (score) => {
 
 const MANIA_JUDGEMENTS = ['perfect', 'great', 'good', 'ok', 'meh', 'miss'];
 
-const calculateManiaAccuracyAndRank = (statistics, mods = []) => {
+const calculateManiaAccuracyAndRank = (statistics, mods = [], { isLazer = false } = {}) => {
     if (!statistics || typeof statistics !== 'object') return null;
 
     const counts = Object.fromEntries(MANIA_JUDGEMENTS.map((judgement) => {
@@ -38,8 +38,9 @@ const calculateManiaAccuracyAndRank = (statistics, mods = []) => {
     if (totalJudgements <= 0) return null;
 
     const acronyms = new Set((mods || []).map((mod) => String(mod?.acronym || mod || '').toUpperCase()));
-    const isClassic = acronyms.has('CL');
-    const maximumValue = isClassic ? 300 : 320;
+    const isClassic = !isLazer;
+    // Display accuracy uses 305 for MAX in lazer; 320 is only used for mania pp.
+    const maximumValue = isClassic ? 300 : 305;
     const earnedValue = (counts.perfect * maximumValue)
         + (counts.great * 300)
         + (counts.good * 200)
@@ -81,14 +82,16 @@ const getScoreDetails = (score) => {
             ...(mod?.settings && typeof mod.settings === 'object' ? { settings: mod.settings } : {}),
         })).filter((mod) => mod.acronym)
         : null;
-    const calculated = calculateManiaAccuracyAndRank(statistics, mods);
+    // A lazer score can use CL without becoming a stable score.
+    const isLazer = Number.isSafeInteger(buildId) && buildId > 0;
+    const calculated = calculateManiaAccuracyAndRank(statistics, mods, { isLazer });
     const apiAccuracy = Number(score?.accuracy);
     const apiRank = typeof score?.rank === 'string' ? score.rank.slice(0, 2) : null;
 
     return {
         accuracy: calculated?.accuracy
             ?? (Number.isFinite(apiAccuracy) && apiAccuracy >= 0 ? apiAccuracy : null),
-        build_id: Number.isSafeInteger(buildId) && buildId > 0 ? buildId : null,
+        build_id: isLazer ? buildId : null,
         max_combo: Number.isSafeInteger(maxCombo) && maxCombo >= 0 ? maxCombo : null,
         mods,
         score_rank: calculated?.rank ?? apiRank,

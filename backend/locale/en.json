@@ -76,6 +76,15 @@
     "unauthorized": "Insufficient permissions to delete"
   },
   "post": {
+    "invalidType": "Invalid post type",
+    "invalidBountyEnd": "Choose permanent or provide a valid end time with a timezone",
+    "invalidBountyPacks": "A bounty must link to 1 to 5 distinct valid Pack IDs",
+    "bountyPackNotFound": "One or more linked packs do not exist",
+    "bountyPacksOnly": "Only bounty posts can link to packs",
+    "invalidBountyContent": "Provide a bounty title and rules in at least one language",
+    "bountyTypeFixed": "A bounty post cannot be changed to another post type",
+    "notBounty": "This is not a bounty post",
+    "bountyClosed": "The bounty has ended",
     "listFailed": "Failed to get post list",
     "getPostFailed": "Failed to get this post",
     "notFound": "Post not found",

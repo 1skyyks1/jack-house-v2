@@ -2,7 +2,7 @@ const sequelize = require('../../config/db');
 const fs = require('fs');
 const { Tournament, TStaff, TRound, TMappoolStats } = require('../../models/tournament');
 const User = require('../../models/user/user');
-const storage = require('../storage');
+const { getTeamAvatarUploadProvider, uploadTeamAvatarFile } = require('./teamAvatarStorage');
 const auditService = require('./auditService');
 const { buildContentHashObjectName, hashFile, optimizeImageFile } = require('../../utils/imageOptimizer');
 
@@ -31,8 +31,6 @@ const UPDATE_FIELDS = [
 
 const QUAL_RANK_MODE_TOTAL_SCORE = 0;
 const QUAL_RANK_MODE_RANK_SUM = 1;
-const TEAM_AVATAR_STORAGE_SCOPE = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_SCOPE || (process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_PROVIDER ? 'TOURNAMENT_TEAM_AVATAR' : 'RICHTEXT');
-const TEAM_AVATAR_STORAGE_BUCKET = process.env.TOURNAMENT_TEAM_AVATAR_STORAGE_BUCKET || 'tournament-team-avatars';
 const TOURNAMENT_AUDIT_IDENTITY_FIELDS = ['id', 'name', 'acronym', 'status'];
 
 const makeError = (message, status = 400) => {
@@ -166,12 +164,12 @@ const uploadDefaultTeamAvatar = async (tid, file, operatorId) => {
     };
 
     try {
-        const optimized = await optimizeImageFile(file, { convertToWebp: true });
+        const uploadProvider = getTeamAvatarUploadProvider();
+        const optimized = await optimizeImageFile(file, { convertToWebp: uploadProvider !== 'pngurl' });
         const checksum = await hashFile(file.path);
         const fileName = buildContentHashObjectName(checksum, optimized.mimeType, file.filename);
         const objectName = `tournaments/${tid}/default-team-avatar/${fileName}`;
-        const uploaded = await storage.uploadFile(TEAM_AVATAR_STORAGE_SCOPE, {
-            bucket: TEAM_AVATAR_STORAGE_BUCKET,
+        const uploaded = await uploadTeamAvatarFile({
             objectName,
             filePath: file.path,
             mimeType: optimized.mimeType,

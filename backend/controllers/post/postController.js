@@ -1,9 +1,14 @@
 const { Post, PostTranslation, User } = require('../../models');
 const sequelize = require('../../config/db')
 const { Op } = require('sequelize');
+const {
+    BOUNTY_POST_TYPE, BountyValidationError, isValidPostType, serializePost, linkedPacksInclude,
+    validateBountyTranslations, parseBountyEnd, validateBountyPackIds, replaceBountyPacks,
+} = require('../../services/postBountyService');
 const { can } = require('../../utils/permissions');
 
 const canPublishType = (req, type) => Number(type) === 0
+    || Number(type) === BOUNTY_POST_TYPE
     || (Number(type) === 1 && (can(req, 'postFiles') || can(req, 'events') || can(req, 'posts')))
     || (Number(type) === 2 && (can(req, 'events') || can(req, 'posts')))
     || (Number(type) === 3 && can(req, 'announcement'));
@@ -110,7 +115,7 @@ exports.getPostWithContentByType = async (req, res) => {
         })
 
         const processedPosts = rows.map(post => {
-            const postData = post.toJSON();
+            const postData = serializePost(post);
 
             // 提取中文翻译
             const zhTranslation = postData.translations.find(t => t.language === 'zh') || {};
@@ -209,7 +214,7 @@ exports.getRequestList = async (req, res) => {
 // 公共的处理帖子数据的函数
 const processPosts = (posts) => {
     return posts.map(post => {
-        const postData = post.toJSON();
+        const postData = serializePost(post);
         const zhTranslation = postData.translations.find(t => t.language === 'zh');
         const enTranslation = postData.translations.find(t => t.language === 'en');
 
@@ -247,11 +252,12 @@ exports.getPostById = async (req, res) => {
                         model: User,
                         as: 'user',
                         attributes: ['user_name', 'avatar'],
-                    }
+                    },
+                    linkedPacksInclude(),
                 ]
             });
         if (post) {
-            res.json({ data: post });
+            res.json({ data: serializePost(post) });
         } else {
             res.status(404).json({ message: req.t('post.notFound') });
         }
@@ -262,8 +268,11 @@ exports.getPostById = async (req, res) => {
 
 // 创建帖子
 exports.createPost = async (req, res) => {
-    const { type, translations, end, limit } = req.body;
+    const { type, translations, end, limit, pack_ids } = req.body;
     const user_id = req.user.user_id;
+    if (!isValidPostType(type)) {
+        return res.status(400).json({ message: req.t('post.invalidType') });
+    }
     if (!canPublishType(req, type)) {
         return res.status(403).json({ message: req.t('post.noPermission') });
     }
@@ -277,15 +286,24 @@ exports.createPost = async (req, res) => {
         }
     }
 
-    const t = await sequelize.transaction();
-
+    let t;
     try {
+        if (Number(type) === BOUNTY_POST_TYPE) {
+            endDate = parseBountyEnd(end);
+            validateBountyTranslations(translations);
+        } else if (pack_ids !== undefined && (!Array.isArray(pack_ids) || pack_ids.length)) {
+            throw new BountyValidationError('post.bountyPacksOnly');
+        }
+        t = await sequelize.transaction();
+        if (Number(type) === BOUNTY_POST_TYPE) await validateBountyPackIds(pack_ids, t);
         const newPost = await Post.create({
             user_id,
-            type,
+            type: Number(type),
             end: endDate || null,
-            limit: limit || null,
+            limit: Number(type) === BOUNTY_POST_TYPE ? null : limit || null,
         }, { transaction: t });
+
+        if (Number(type) === BOUNTY_POST_TYPE) await replaceBountyPacks(newPost.post_id, pack_ids, t);
 
         for(const { language, title, content } of translations){
             const sanitizedContent = sanitizeRichTextHtml(content);
@@ -306,7 +324,8 @@ exports.createPost = async (req, res) => {
         await t.commit();
         res.status(201).json({ data: { post_id: newPost.post_id } });
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        if (error instanceof BountyValidationError) return res.status(400).json({ message: req.t(error.key) });
         console.error(error)
         res.status(500).json({ message: req.t('post.createFailed') });
     }
@@ -315,88 +334,130 @@ exports.createPost = async (req, res) => {
 // 更新帖子
 exports.updatePost = async (req, res) => {
     const { post_id } = req.params;
-    const { type, translations, end, limit } = req.body;
+    const { type, translations, end, limit, pack_ids } = req.body;
     const user_id = req.user.user_id;
-
-    let endDate;
-    if(Number(type) === 1 && end) {
-        endDate = new Date(end);
-        const now = new Date();
-        if(endDate < now) { //征稿结束时间
-            return res.status(400).json({ message: req.t('post.startAfterEnd') })
-        }
+    if (type !== undefined && !isValidPostType(type)) {
+        return res.status(400).json({ message: req.t('post.invalidType') });
     }
-
+    let transaction;
     try {
-        const existingPost = await Post.findByPk(post_id);
+        const post = await Post.findByPk(post_id);
+        if (!post) return res.status(404).json({ message: req.t('post.notFound') });
+        if (!canModeratePost(req, post) && post.user_id !== user_id) {
+            return res.status(403).json({ message: req.t('post.updateForbidden') });
+        }
+        if (type !== undefined && Number(type) !== Number(post.type) && !canPublishType(req, type)) {
+            return res.status(403).json({ message: req.t('post.noPermission') });
+        }
+        if (Number(post.type) === BOUNTY_POST_TYPE && type !== undefined && Number(type) !== BOUNTY_POST_TYPE) {
+            throw new BountyValidationError('post.bountyTypeFixed');
+        }
+        transaction = await sequelize.transaction();
+        // Serialize edits with manual closure; a concurrent edit must never reopen a closed bounty.
+        const existingPost = await Post.findByPk(post_id, { transaction, lock: transaction.LOCK.UPDATE });
         if (!existingPost) {
+            await transaction.rollback();
             return res.status(404).json({ message: req.t('post.notFound') });
         }
-        const isAdmin = canModeratePost(req, existingPost);
-        const isOwner = existingPost.user_id === user_id;
-        if (isAdmin || isOwner) {
-            if (type !== undefined && Number(type) !== Number(existingPost.type) && !canPublishType(req, type)) {
-                return res.status(403).json({ message: req.t('post.noPermission') });
-            }
-            existingPost.type = type ?? existingPost.type;
-            existingPost.end = endDate ?? existingPost.end;
-            existingPost.limit = limit ?? existingPost.limit;
-            await existingPost.save();
-
-            let translationModified = false;
-
-            if (translations && Array.isArray(translations)) {
-                for (const { language, title, content } of translations) {
-
-                    // 如果指定了语言，则更新相应语言的翻译
-                    if (language && (title || content)) {
-                        const existingTranslation = await PostTranslation.findOne({
-                            where: { post_id, language }
-                        });
-
-                        if (existingTranslation) {
-                            // 更新已有的翻译
-                            const hasContent = content !== undefined && content !== null;
-                            const sanitizedContent = hasContent ? sanitizeRichTextHtml(content) : existingTranslation.content;
-                            existingTranslation.title = title || existingTranslation.title;
-                            existingTranslation.content = sanitizedContent;
-                            await existingTranslation.save();
-                            if (hasContent) {
-                                await syncRichTextAssetReferences({
-                                    contentType: 'post_translation',
-                                    contentId: existingTranslation.post_translation_id,
-                                    html: sanitizedContent,
-                                });
-                            }
-                            translationModified = true;
-                        } else {
-                            // 如果没有找到该语言的翻译，创建新的翻译记录
-                            const sanitizedContent = sanitizeRichTextHtml(content);
-                            const translation = await PostTranslation.create({
-                                post_id,
-                                language,
-                                title,
-                                content: sanitizedContent
-                            });
-                            await syncRichTextAssetReferences({
-                                contentType: 'post_translation',
-                                contentId: translation.post_translation_id,
-                                html: sanitizedContent,
-                            });
-                            translationModified = true;
-                        }
-                    }
-                }
-                if (translationModified){ // 当修改帖子内容时，触发updated_time更新
-                    existingPost.changed('updated_time', true);
-                    await existingPost.save();
-                }
-            }
-            res.json({ message: req.t('post.updateSuccess') });
-        } else {
-            res.status(403).json({ message: req.t('post.updateForbidden') });
+        if (!canModeratePost(req, existingPost) && existingPost.user_id !== user_id) {
+            await transaction.rollback();
+            return res.status(403).json({ message: req.t('post.updateForbidden') });
         }
+        if (Number(existingPost.type) === BOUNTY_POST_TYPE && type !== undefined && Number(type) !== BOUNTY_POST_TYPE) {
+            throw new BountyValidationError('post.bountyTypeFixed');
+        }
+        const nextType = Number(type ?? existingPost.type);
+        if (nextType !== Number(existingPost.type) && !canPublishType(req, nextType)) {
+            await transaction.rollback();
+            return res.status(403).json({ message: req.t('post.noPermission') });
+        }
+        if (nextType === BOUNTY_POST_TYPE) {
+            if (translations !== undefined || Number(existingPost.type) !== BOUNTY_POST_TYPE) validateBountyTranslations(translations);
+            if (end !== undefined || Number(existingPost.type) !== BOUNTY_POST_TYPE) {
+                existingPost.end = parseBountyEnd(end, {
+                    existingEnd: Number(existingPost.type) === BOUNTY_POST_TYPE ? existingPost.end : null,
+                });
+            }
+            if (pack_ids !== undefined || Number(existingPost.type) !== BOUNTY_POST_TYPE) {
+                await validateBountyPackIds(pack_ids, transaction);
+                await replaceBountyPacks(post_id, pack_ids, transaction);
+            }
+            existingPost.limit = null;
+        } else {
+            if (pack_ids !== undefined && (!Array.isArray(pack_ids) || pack_ids.length)) {
+                throw new BountyValidationError('post.bountyPacksOnly');
+            }
+            if (nextType === 1 && end) {
+                const endDate = new Date(end);
+                if (!Number.isFinite(endDate.getTime()) || endDate <= new Date()) {
+                    throw new BountyValidationError('post.startAfterEnd');
+                }
+                existingPost.end = endDate;
+            }
+            existingPost.limit = limit ?? existingPost.limit;
+        }
+        existingPost.type = nextType;
+        await existingPost.save({ transaction });
+        if (Array.isArray(translations)) {
+            for (const { language, title, content } of translations) {
+                if (!language || (nextType !== BOUNTY_POST_TYPE && !title && !content)) continue;
+                const existingTranslation = await PostTranslation.findOne({ where: { post_id, language }, transaction });
+                const hasContent = content !== undefined && content !== null;
+                const sanitizedContent = hasContent || !existingTranslation
+                    ? sanitizeRichTextHtml(content) : existingTranslation.content;
+                let translation;
+                if (existingTranslation) {
+                    existingTranslation.title = nextType === BOUNTY_POST_TYPE ? title : title || existingTranslation.title;
+                    existingTranslation.content = sanitizedContent;
+                    await existingTranslation.save({ transaction });
+                    translation = existingTranslation;
+                } else {
+                    translation = await PostTranslation.create({ post_id, language, title, content: sanitizedContent }, { transaction });
+                }
+                if (hasContent) await syncRichTextAssetReferences({
+                    contentType: 'post_translation', contentId: translation.post_translation_id,
+                    html: sanitizedContent, transaction,
+                });
+                existingPost.changed('updated_time', true);
+            }
+            await existingPost.save({ transaction });
+        }
+        await transaction.commit();
+        res.json({ message: req.t('post.updateSuccess') });
     } catch (error) {
+        if (transaction && !transaction.finished) await transaction.rollback();
+        if (error instanceof BountyValidationError) return res.status(400).json({ message: req.t(error.key) });
+        console.error(error);
+        res.status(500).json({ message: req.t('post.updateFailed') });
+    }
+};
+
+exports.closeBounty = async (req, res) => {
+    let transaction;
+    try {
+        transaction = await sequelize.transaction();
+        const post = await Post.findByPk(req.params.post_id, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!post) {
+            await transaction.rollback();
+            return res.status(404).json({ message: req.t('post.notFound') });
+        }
+        if (!canModeratePost(req, post) && post.user_id !== req.user.user_id) {
+            await transaction.rollback();
+            return res.status(403).json({ message: req.t('post.updateForbidden') });
+        }
+        if (Number(post.type) !== BOUNTY_POST_TYPE) throw new BountyValidationError('post.notBounty');
+        if (!post.bounty_closed_at) {
+            post.bounty_closed_at = new Date();
+            await post.save({ transaction });
+        }
+        await transaction.commit();
+        res.json({ data: {
+            post_id: post.post_id, bounty_closed_at: post.bounty_closed_at, bounty_status: 'closed',
+        }, message: req.t('post.bountyClosed') });
+    } catch (error) {
+        if (transaction && !transaction.finished) await transaction.rollback();
+        if (error instanceof BountyValidationError) return res.status(400).json({ message: req.t(error.key) });
+        console.error(error);
         res.status(500).json({ message: req.t('post.updateFailed') });
     }
 };
@@ -473,7 +534,7 @@ exports.searchPosts = async (req, res) => {
 };
 
 exports.getAllType3Posts = async (req, res) => {
-    const types =  [0, 1, 2, 3];
+    const types =  [0, 1, 2, 3, 4];
     const limit = 3;
 
     try {

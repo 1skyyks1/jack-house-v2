@@ -49,7 +49,7 @@ test('lazer scores use total_score and retain their detailed score snapshot', ()
     const best = getBestScoresByBeatmap([{ ...raw, beatmap_id: 22 }], [22]);
     assert.equal(best.get(22).scoreValue, 987654);
     assert.deepEqual(getScoreDetails(raw), {
-        accuracy: (500 * 320 + 20 * 300 + 3 * 200 + 2 * 100 + 1 * 50) / (526 * 320),
+        accuracy: (500 * 305 + 20 * 300 + 3 * 200 + 2 * 100 + 1 * 50) / (526 * 305),
         build_id: 20260826,
         max_combo: 1234,
         mods: [{ acronym: 'DT', settings: { speed_change: 1.2 } }],
@@ -70,9 +70,29 @@ test('classic mania accuracy and rank are calculated from judgements when osu re
 
 test('classic and lazer mania grades use their respective boundary rules', () => {
     assert.equal(calculateManiaAccuracyAndRank({ great: 95, miss: 5 }, [{ acronym: 'CL' }]).rank, 'A');
-    assert.equal(calculateManiaAccuracyAndRank({ perfect: 95, miss: 5 }).rank, 'S');
-    assert.equal(calculateManiaAccuracyAndRank({ perfect: 1, great: 99 }).rank, 'X');
+    assert.equal(calculateManiaAccuracyAndRank({ perfect: 95, miss: 5 }, [], { isLazer: true }).rank, 'S');
+    assert.equal(calculateManiaAccuracyAndRank({ perfect: 1, great: 99 }, [], { isLazer: true }).rank, 'X');
     assert.equal(calculateManiaAccuracyAndRank({ perfect: 99, great: 1 }, [{ acronym: 'CL' }]).rank, 'X');
+});
+
+test('score origin selects display accuracy even when CL is present or absent', () => {
+    const statistics = { perfect: 500, great: 500 };
+    for (const mods of [[], [{ acronym: 'CL' }]]) {
+        const stable = getScoreDetails({ build_id: null, statistics, mods });
+        const lazer = getScoreDetails({ build_id: 20260826, statistics, mods });
+        assert.equal(stable.accuracy, 1);
+        assert.equal(stable.score_rank, 'X');
+        assert.equal(lazer.accuracy, 605 / 610);
+        assert.equal(lazer.score_rank, 'X');
+    }
+});
+
+test('lazer grades follow the corrected 305 accuracy and preserve silver grades', () => {
+    const statistics = { perfect: 20, great: 78, miss: 2 };
+    const lazer = getScoreDetails({ build_id: 20260826, statistics, mods: [{ acronym: 'HD' }] });
+    assert.equal(lazer.accuracy, 29500 / 30500);
+    assert.equal(lazer.score_rank, 'SH');
+    assert.equal(getScoreDetails({ build_id: null, statistics, mods: [] }).accuracy, 0.98);
 });
 
 test('post-event import writes the independent event_id 0 scope', async () => {
@@ -125,7 +145,7 @@ test('new records persist score details together with the score', async () => {
         userId: 7,
     });
 
-    assert.equal(defaults.accuracy, (99 * 320 + 300) / (100 * 320));
+    assert.equal(defaults.accuracy, (99 * 305 + 300) / (100 * 305));
     assert.equal(defaults.build_id, 123);
     assert.equal(defaults.max_combo, 1000);
     assert.equal(defaults.score_rank, 'XH');

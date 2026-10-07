@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { validatePackTagSelection } = require('../../services/packTagService');
 const { getAllowedTagCategories } = require('../../utils/packTag');
 const { backfillPackScoresFromEvents } = require('../../services/packRankService');
+const { activeBountyCountSql, activeBountyNextEndSql, serializePackBountyCount, getActivePackBounties } = require('../../services/postBountyService');
 
 // 创建新图包（非osu）
 exports.createPack = async (req, res) => {
@@ -49,18 +50,23 @@ exports.createPack = async (req, res) => {
 
 // 获取图包列表（带筛选和分页）
 exports.getAllPacks = async (req, res) => {
-    const { page, pageSize, searchKeys, bid, packId, tags, type, graveyard, ranked, featured, loved, recommended, original, sort, pending, osuStatus } = req.query;
+    const { page, pageSize, searchKeys, bid, packId, tags, type, graveyard, ranked, featured, loved, recommended, original, bounty, sort, pending, osuStatus } = req.query;
     const offset = (parseInt(page, 10) - 1) * parseInt(pageSize, 10);
     const limit = parseInt(pageSize, 10);
     const keyword = decodeURIComponent(searchKeys || '').trim();
     const sortNum = Number(sort);
     try {
+        const bountyNow = new Date();
+        const bountyCountSql = activeBountyCountSql(bountyNow);
         const findOptions = {
             distinct: true,
             limit,
             offset,
             order: [['created_time', 'DESC']],
-            attributes: { exclude: ['user_id', 'description'] },
+            attributes: { exclude: ['user_id', 'description'], include: [
+                [sequelize.literal(bountyCountSql), 'bounty_count'],
+                [sequelize.literal(activeBountyNextEndSql(bountyNow)), 'bounty_next_end_at'],
+            ] },
             where: {},
             include: [
                 {
@@ -150,6 +156,10 @@ exports.getAllPacks = async (req, res) => {
             findOptions.where.is_recommended = true;
         }
 
+        if (bounty === '1' || bounty === 'true') {
+            findOptions.where[Op.and] = sequelize.literal(`${bountyCountSql} > 0`);
+        }
+
         if (original === '1' || original === 'true') {
             findOptions.where.is_original = true;
         }
@@ -171,7 +181,7 @@ exports.getAllPacks = async (req, res) => {
             totalPages,
             pageSize: limit,
             page: parseInt(page, 10),
-            data: rows
+            data: rows.map(serializePackBountyCount)
         });
     } catch (error) {
         res.status(500).json({ message: req.t('pack.getListFailed') });
@@ -279,6 +289,7 @@ exports.updateLeaderboard = async (req, res) => {
 // 获取单个图包的详细信息
 exports.getPackById = async (req, res) => {
     try {
+        const now = new Date();
         const pack = await Pack.findByPk(req.params.pack_id, {
             include: [
                 {
@@ -303,7 +314,12 @@ exports.getPackById = async (req, res) => {
             return res.status(404).json({ message: req.t('pack.notFound') });
         }
 
-        res.status(200).json({ data: pack });
+        const bounties = await getActivePackBounties(pack.pack_id, now);
+        const data = serializePackBountyCount(pack);
+        data.bounties = bounties;
+        data.bounty_count = bounties.length;
+        data.has_bounty = bounties.length > 0;
+        res.status(200).json({ data });
     } catch (error) {
         res.status(500).json({ message: req.t('pack.getDetailFailed') });
     }

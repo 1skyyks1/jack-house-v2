@@ -33,6 +33,9 @@ router.post('/', checkAuth(), PostController.createPost);
 // 更新帖子
 router.put('/:post_id', checkAuth(), PostController.updatePost);
 
+// 作者或帖子管理员手动结束悬赏（幂等）。
+router.patch('/:post_id/bounty/close', checkAuth(), PostController.closeBounty);
+
 // 删除帖子
 router.delete('/:post_id', checkAuth(), PostController.deletePost);
 

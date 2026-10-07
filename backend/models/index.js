@@ -1,4 +1,5 @@
 const Post = require('./post/post');
+const PostPack = require('./post/postPack');
 const PostTranslation = require('./post/postTranslation');
 const PostFile = require('./post/postFile');
 const PostComment = require('./post/postComment');
@@ -24,6 +25,14 @@ Post.hasMany(PostTranslation, { foreignKey: 'post_id', onDelete: 'CASCADE', as: 
 Post.hasMany(PostFile, { foreignKey: 'post_id', onDelete: 'CASCADE', as: 'files' });
 Post.hasMany(PostComment, { foreignKey: 'post_id', onDelete: 'CASCADE' });
 Post.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Post.belongsToMany(Pack, {
+    through: PostPack, foreignKey: 'post_id', otherKey: 'pack_id',
+    as: 'linked_packs', onDelete: 'CASCADE',
+});
+Pack.belongsToMany(Post, {
+    through: PostPack, foreignKey: 'pack_id', otherKey: 'post_id',
+    as: 'bounty_posts', onDelete: 'CASCADE',
+});
 
 PostComment.belongsTo(Post, { foreignKey: 'post_id' });
 PostComment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
@@ -115,6 +124,7 @@ EventScore.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 module.exports = {
     Post,
+    PostPack,
     PostTranslation,
     PostFile,
     PostComment,

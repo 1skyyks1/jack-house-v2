@@ -76,6 +76,15 @@
     "unauthorized": "权限不足，无法删除"
   },
   "post": {
+    "invalidType": "无效的帖子类型",
+    "invalidBountyEnd": "请选择永久，或填写带时区的有效结束时间",
+    "invalidBountyPacks": "悬赏需要关联 1 至 5 个不同的有效 Pack ID",
+    "bountyPackNotFound": "一个或多个关联 Pack 不存在",
+    "bountyPacksOnly": "仅悬赏帖子可以关联 Pack",
+    "invalidBountyContent": "请至少填写一种语言的悬赏标题和规则正文",
+    "bountyTypeFixed": "悬赏帖子不能更改为其他帖子类型",
+    "notBounty": "该帖子不是悬赏帖子",
+    "bountyClosed": "悬赏已结束",
     "listFailed": "获取帖子列表失败",
     "getPostFailed": "获取该帖子失败",
     "notFound": "帖子不存在",

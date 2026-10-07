@@ -17,7 +17,7 @@ const Post = sequelize.define('Post', {
     type: {
         type: DataTypes.TINYINT,
         allowNull: false,
-        comment: '帖子类型（0=普通帖子，1=征稿，2=活动，3=公告）',
+        comment: '帖子类型（0=普通帖子，1=征稿，2=活动，3=公告，4=悬赏）',
     },
     created_time: {
         type: DataTypes.DATE,
@@ -32,7 +32,12 @@ const Post = sequelize.define('Post', {
     end: {
         type: DataTypes.DATE,
         allowNull: true,
-        comment: '征稿结束时间'
+        comment: '征稿或悬赏结束时间；悬赏为空表示永久'
+    },
+    bounty_closed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: '悬赏手动结束时间',
     },
     limit: {
         type: DataTypes.TINYINT,
