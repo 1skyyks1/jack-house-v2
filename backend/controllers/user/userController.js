@@ -8,8 +8,8 @@ const { can, resolveUserPermissions } = require('../../utils/permissions');
 const sequelize = require('../../config/db');
 const { listUserRecentScores } = require('../../services/userRecentScoreService');
 
-const USER_SELF_UPDATE_FIELDS = ['password', 'qq', 'discord'];
-const ADMIN_UPDATE_FIELDS = ['user_name', 'password', 'email', 'status', 'osu_uid', 'avatar', 'qq', 'discord'];
+const USER_SELF_UPDATE_FIELDS = ['password', 'qq', 'discord', 'default_pp_client'];
+const ADMIN_UPDATE_FIELDS = ['user_name', 'password', 'email', 'status', 'osu_uid', 'avatar', 'qq', 'discord', 'default_pp_client'];
 const PUBLIC_USER_DETAIL_FIELDS = [
     'user_id',
     'user_name',
@@ -18,6 +18,7 @@ const PUBLIC_USER_DETAIL_FIELDS = [
     'osu_uid',
     'qq',
     'discord',
+    'default_pp_client',
     'created_time',
     'updated_time',
 ];
@@ -230,6 +231,10 @@ const updateUser = async (req, res) => {
                 throw Object.assign(new Error(req.t('user.noPermission')), { status: 403 });
             }
             const updateData = pickDefined(req.body, isManager ? ADMIN_UPDATE_FIELDS : USER_SELF_UPDATE_FIELDS);
+            if (Object.prototype.hasOwnProperty.call(updateData, 'default_pp_client')
+                && !['stable', 'lazer'].includes(updateData.default_pp_client)) {
+                throw Object.assign(new Error(req.t('user.invalidPPClient')), { status: 400 });
+            }
             if (updateData.password) updateData.password = await bcrypt.hash(updateData.password, 10);
             else delete updateData.password;
             await user.update(updateData, { transaction });

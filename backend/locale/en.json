@@ -168,6 +168,7 @@
     "notFound": "User not found",
     "updateSuccess": "User information updated successfully",
     "updateFailed": "Failed to update user",
+    "invalidPPClient": "The default client must be Stable or Lazer",
     "deleteSuccess": "User deleted successfully",
     "deleteFailed": "Failed to delete user",
     "noPermission": "Insufficient permissions to update"

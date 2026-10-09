@@ -46,6 +46,12 @@ const User = sequelize.define('User', {
         unique: true,
         allowNull: true,
     },
+    default_pp_client: {
+        type: DataTypes.STRING(8),
+        allowNull: false,
+        defaultValue: 'stable',
+        validate: { isIn: [['stable', 'lazer']] },
+    },
     created_time: {
         type: DataTypes.DATE,
         defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const UserController = require('../controllers/user/userController');
+const PPController = require('../controllers/ppController');
 const checkAuth = require('../middleware/authMiddleware');
 const { requirePermission } = checkAuth;
 const { PERMISSIONS } = require('../config/permissions');
@@ -22,6 +23,11 @@ router.get('/:user_id/tournaments', checkAuth.optional, UserController.getUserTo
 
 // 获取用户在站内精选图包中的最近成绩
 router.get('/:user_id/recent-scores', checkAuth.optional, UserController.getUserRecentScores);
+
+// 精选池 PP：双客户端统计和独立 BP List
+router.get('/:user_id/pp', PPController.getUserPP);
+router.get('/:user_id/pp/best', PPController.getBestPlays);
+router.get('/:user_id/pp/history', PPController.getRankHistory);
 
 // 获取单个用户
 router.get('/:user_id', checkAuth.optional, UserController.getUserById);

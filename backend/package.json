@@ -30,6 +30,15 @@
     "migrate:storage-metadata": "node scripts/migrate-storage-metadata.js",
     "migrate:rewards": "node scripts/migrate-rewards.js",
     "migrate:notice": "node scripts/migrate-notice.js",
+    "migrate:pp": "node scripts/migrate-pp.js",
+    "migrate:user-profile-client": "node scripts/migrate-user-profile-client.js",
+    "backfill:pp": "node scripts/pp.js backfill",
+    "worker:pp": "node scripts/pp.js work",
+    "drain:pp": "node scripts/pp.js drain",
+    "retry:pp": "node scripts/pp.js retry",
+    "recalculate:pp": "node scripts/pp.js recalculate",
+    "publish:pp": "node scripts/pp.js publish",
+    "verify:pp": "node scripts/verify-pp-data.js",
     "test": "node --test test/*.test.js"
   },
   "author": "",
@@ -55,6 +64,7 @@
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^2.7.0",
     "osu-api-v2-js": "3.0.5",
+    "rosu-pp-js": "4.0.1",
     "sanitize-html": "^2.17.5",
     "sequelize": "^6.37.7",
     "sharp": "^0.35.2"

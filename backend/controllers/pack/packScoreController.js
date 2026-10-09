@@ -7,6 +7,7 @@ const {
     upsertBestPackScore,
 } = require('../../services/beatmapScoreService');
 const { isPackRankEligibleMap } = require('../../services/packRankService');
+const { captureScores } = require('../../services/pp/repository');
 
 const RECENT_SCORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -72,16 +73,19 @@ const mapLeaderboardRow = (row) => ({
     },
 });
 
-const syncScorePairs = async ({ pairs, scores, userId }) => {
+const syncScorePairs = async ({ pairs, scores, userId, ppBeatmapIds }) => {
     const uniquePairs = [...new Map(pairs.map((pair) => [
         `${Number(pair.packId)}:${Number(pair.beatmapId)}`,
         { packId: Number(pair.packId), beatmapId: Number(pair.beatmapId) },
     ])).values()];
     const beatmapIds = new Set(uniquePairs.map((pair) => pair.beatmapId));
-    const bestScores = getBestScoresByBeatmap(scores, beatmapIds);
     const summary = { matched: 0, created: 0, updated: 0, unchanged: 0 };
 
     await sequelize.transaction(async (transaction) => {
+        // Capture all returned attempts before raw-score selection discards candidates.
+        summary.pp = await captureScores({ scores, userId,
+            beatmapIds: ppBeatmapIds || beatmapIds }, { transaction });
+        const bestScores = getBestScoresByBeatmap(scores, beatmapIds);
         for (const pair of uniquePairs) {
             const score = bestScores.get(Number(pair.beatmapId));
             if (!score) continue;
@@ -204,7 +208,8 @@ exports.syncPackScores = async (req, res) => {
         const pairs = (pack.maps || [])
             .filter(isPackRankEligibleMap)
             .map((map) => ({ packId, beatmapId: Number(map.beatmap_id) }));
-        const summary = await syncScorePairs({ pairs, scores, userId });
+        const ppBeatmapIds = (pack.maps || []).map((map) => Number(map.beatmap_id)).filter((id) => id > 0);
+        const summary = await syncScorePairs({ pairs, scores, userId, ppBeatmapIds });
         return res.status(200).json({ data: summary, message: req.t('pack.syncScoresSuccess') });
     } catch (error) {
         console.error(error);
@@ -224,7 +229,9 @@ exports.syncAllFeaturedScores = async (req, res) => {
         const pairs = packs.flatMap((pack) => (pack.maps || [])
             .filter(isPackRankEligibleMap)
             .map((map) => ({ packId: Number(pack.pack_id), beatmapId: Number(map.beatmap_id) })));
-        if (pairs.length === 0) {
+        const ppBeatmapIds = packs.flatMap((pack) => (pack.maps || [])
+            .map((map) => Number(map.beatmap_id)).filter((id) => id > 0));
+        if (ppBeatmapIds.length === 0) {
             return res.status(200).json({
                 data: { matched: 0, created: 0, updated: 0, unchanged: 0 },
                 message: req.t('pack.syncScoresSuccess'),
@@ -233,7 +240,7 @@ exports.syncAllFeaturedScores = async (req, res) => {
 
         const user = await User.findByPk(userId);
         const scores = await fetchLast24Hours(user, 'featured_score_sync');
-        const summary = await syncScorePairs({ pairs, scores, userId });
+        const summary = await syncScorePairs({ pairs, scores, userId, ppBeatmapIds });
         return res.status(200).json({ data: summary, message: req.t('pack.syncScoresSuccess') });
     } catch (error) {
         console.error(error);

@@ -286,6 +286,7 @@ app.use('/comment', commonLimiter, postCommentRoutes);
 app.use('/postFile', commonLimiter, postFileRoutes);
 app.use('/dashboard', commonLimiter, dashboardRoutes);
 app.use('/pack', commonLimiter, packRoutes);
+app.use('/pp', commonLimiter, require('./routes/ppRoute'));
 app.use('/tag', commonLimiter, tagRoutes);
 app.use('/packCom', commonLimiter, packCommentRoutes);
 app.use('/event', commonLimiter, eventRoutes)
@@ -301,4 +302,6 @@ app.use('/notice', commonLimiter, noticeRoutes)
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${port}`);
     aiImageModule.start();
+    require('./services/pp/worker').start();
+    require('./services/pp/rankHistory').start();
 });

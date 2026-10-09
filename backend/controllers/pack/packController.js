@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { validatePackTagSelection } = require('../../services/packTagService');
 const { getAllowedTagCategories } = require('../../utils/packTag');
 const { backfillPackScoresFromEvents } = require('../../services/packRankService');
+const { capturePackScores } = require('../../services/pp/repository');
 const { activeBountyCountSql, activeBountyNextEndSql, serializePackBountyCount, getActivePackBounties } = require('../../services/postBountyService');
 
 // 创建新图包（非osu）
@@ -269,6 +270,7 @@ exports.updateLeaderboard = async (req, res) => {
                 leaderboard_enabled_at: enabled ? new Date() : null,
                 leaderboard_enabled_by: enabled ? req.user.user_id : null,
             }, { transaction });
+            if (enabled) await capturePackScores(pack.pack_id, { transaction });
         });
         if (!pack) return res.status(404).json({ message: req.t('pack.notFound') });
 
