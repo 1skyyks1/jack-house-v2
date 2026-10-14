@@ -2,6 +2,21 @@
 node_modules
 /dist
 .env
+.backfills/
+
+# Documentation and tests are maintained and run locally
+/docs/
+/test/
+/tests/
+
+# Database upgrades and data repairs are executed locally
+/sql/
+*.sql
+/scripts/migrate-*.js
+/scripts/backfill-*
+/scripts/repair-*.js
+/scripts/refresh-missing-pack-beatmap-ids.js
+/scripts/verify-pp-data.js
 
 # local env files
 .env.local

@@ -66,7 +66,7 @@ async function getUserPP(userId, transaction) {
     };
 }
 
-async function getBestPlays({ userId, client, limit, offset }) {
+async function getBestPlays({ userId, client, limit, offset }, transaction) {
     const rows = await select(`${rankingsCte}
         SELECT bp.*, IF(bp.bp_position <= rules.top_count, POWER(rules.decay, bp.bp_position - 1), 0) AS weight,
                bp.pp * IF(bp.bp_position <= rules.top_count, POWER(rules.decay, bp.bp_position - 1), 0) AS weighted_pp,
@@ -78,9 +78,9 @@ async function getBestPlays({ userId, client, limit, offset }) {
             WHERE candidate.beatmap_id = bp.beatmap_id
         ) JOIN pack p ON p.pack_id = pm.pack_id
         WHERE rules.id = 1 AND bp.user_id = :userId AND bp.client = :client
-        ORDER BY bp.bp_position LIMIT :limit OFFSET :offset`, { userId, client, limit, offset });
-    const [count] = await select('SELECT COUNT(*) AS total FROM pp_best_score WHERE user_id = :userId AND client = :client', { userId, client });
-    return { data: rows.map(mapPlay), total: Number(count.total), ...(await rules()) };
+        ORDER BY bp.bp_position LIMIT :limit OFFSET :offset`, { userId, client, limit, offset }, transaction);
+    const [count] = await select('SELECT COUNT(*) AS total FROM pp_best_score WHERE user_id = :userId AND client = :client', { userId, client }, transaction);
+    return { data: rows.map(mapPlay), total: Number(count.total), ...(await rules(transaction)) };
 }
 
 async function getLeaderboard({ client, limit, offset }, transaction) {

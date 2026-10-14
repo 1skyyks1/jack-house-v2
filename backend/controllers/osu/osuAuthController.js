@@ -2,6 +2,7 @@ const User = require('../../models/user/user');
 const jwt = require('jsonwebtoken');
 const osu = require("osu-api-v2-js");
 const { setAuthCookie } = require('../../utils/authCookie');
+const oauthState = require('../../utils/osuOAuthState');
 
 const CLIENT_ID = Number(process.env.OSU_CLIENT_ID);
 const CLIENT_SECRET = process.env.OSU_CLIENT_SECRET;
@@ -10,16 +11,21 @@ const REDIRECT_URI = process.env.OSU_REDIRECT_URI;
 // 生成授权链接并重定向
 const authRedirect = (req, res) => {
     const url = osu.generateAuthorizationURL(CLIENT_ID, REDIRECT_URI, ["public", "identify"])
-    res.redirect(url);
+    const authorization = new URL(url);
+    authorization.searchParams.set('state', oauthState.begin(req, res));
+    res.redirect(authorization.toString());
 }
 
 // 处理回调并完成登录
 const authCallback = async (req, res) => {
     const { code } = req.query;
+    let returnTo;
+    try { returnTo = oauthState.consume(req, res); } catch { return res.status(400).json({message:'登录验证已过期，请重新登录。'}); }
+    if (typeof code !== 'string' || !code) return res.status(400).json({message:'登录授权无效。'});
 
     try {
         const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET,
-            { code, redirect_uri: REDIRECT_URI }, { verbose: "all" });
+            { code, redirect_uri: REDIRECT_URI }, { verbose: "none" });
 
         const me = await api.getResourceOwner();
         if (!me) {
@@ -44,6 +50,7 @@ const authCallback = async (req, res) => {
 
         const redirectUrl = new URL('/oauth/complete', process.env.FRONTEND_URL);
         redirectUrl.searchParams.set('userId', user.user_id);
+        redirectUrl.searchParams.set('returnTo', returnTo);
 
         // 更新用户名和头像
         if (user.user_name !== me.username) {

@@ -9,6 +9,7 @@
     "cleanup:rich-text-assets": "node scripts/cleanup-rich-text-assets.js",
     "migrate:rich-text-assets": "node scripts/migrate-rich-text-assets.js",
     "migrate:pack-map-beatmap-id": "node scripts/migrate-pack-map-beatmap-id.js",
+    "backfill:pack-map-beatmap-id": "node scripts/refresh-missing-pack-beatmap-ids.js",
     "migrate:pack-rankings": "node scripts/migrate-pack-rankings.js",
     "migrate:pack-rank-system": "node scripts/migrate-pack-rank-system.js",
     "migrate:event-score-details": "node scripts/migrate-event-score-details.js",

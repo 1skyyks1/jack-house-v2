@@ -117,7 +117,11 @@ const fetchRecentManiaScoresSince = async (user, since, pageSize = 100, maxPages
     const sinceTime = since instanceof Date ? since.getTime() : new Date(since).getTime();
     if (!Number.isFinite(sinceTime)) throw new TypeError('A valid since date is required');
 
-    const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET);
+    if (options.beforeRequest) await options.beforeRequest();
+    const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET, undefined, options.beforeRequest ? {timeout:options.apiTimeout || 12, retry_maximum_amount:0, set_token_on_401:false, set_token_on_expires:false, verbose:'none'} : undefined);
+    if (options.apiTimeout) api.timeout = options.apiTimeout;
+    if (options.apiRetries != null) api.retry_maximum_amount = options.apiRetries;
+    if (options.beforeRequest) await options.beforeRequest();
     trackOsuApiRequest({
         operation: 'get_user',
         resourceId: user.osu_uid,
@@ -128,6 +132,7 @@ const fetchRecentManiaScoresSince = async (user, since, pageSize = 100, maxPages
     const collected = [];
 
     for (let page = 0; page < maxPages; page += 1) {
+        if (options.beforeRequest) await options.beforeRequest();
         trackOsuApiRequest({
             operation: 'get_user_scores',
             resourceId: user.osu_uid,
@@ -243,7 +248,41 @@ const upsertBestPackScore = async ({ beatmapId, packId, userId, score }, options
     return { created: false, record, updated: true };
 };
 
+// OMA batches nearby plays, and owns delayed-score retries. Reuse the official
+// wrapper, app credentials and timestamp parsing without a 24-hour scan.
+let omaApi;
+async function fetchOmaManiaScores(user, since, beforeRequest) {
+    if (!omaApi || omaApi.expires <= Date.now()) {
+        await beforeRequest();
+        const api = await osu.API.createAsync(CLIENT_ID, CLIENT_SECRET, undefined, {
+            timeout: 8, retry_maximum_amount: 0, set_token_on_401: false,
+            set_token_on_expires: false, verbose: 'none',
+        });
+        // Do not rely on wrapper token timers. Renewal is budgeted on demand.
+        omaApi = { api, expires: Date.now() + 30 * 60 * 1000 };
+    }
+    const scores = [];
+    for (let page = 0; page < 2; page++) {
+        await beforeRequest();
+        trackOsuApiRequest({ operation: 'get_user_scores', resourceId: user.osu_uid, source: 'oma_sync', userId: user.user_id });
+        let rows;
+        try {
+            rows = await omaApi.api.getUserScores(Number(user.osu_uid), 'recent', osu.Ruleset.mania,
+                { lazer: true, fails: false }, { limit: 50, offset: page * 50 });
+        } catch (error) {
+            if (error.response?.status_code === 401) omaApi = undefined;
+            throw error; // Next OMA attempt may renew; never retry secretly here.
+        }
+        if (!Array.isArray(rows)) throw new Error('Invalid official score response');
+        scores.push(...rows.filter(s => getPlayedAt(s)?.getTime() >= since.getTime()));
+        if (rows.length < 50 || rows.some(s => getPlayedAt(s)?.getTime() < since.getTime())) break;
+    }
+    return scores;
+}
+
+
 module.exports = {
+    fetchOmaManiaScores,
     calculateManiaAccuracyAndRank,
     fetchRecentManiaScores,
     fetchRecentManiaScoresSince,

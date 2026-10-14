@@ -51,7 +51,7 @@ app.get('/ip', (request, response) => response.send(request.ip))
 
 // 安全中间件
 app.use(helmet());
-app.use(morgan('dev'));
+app.use(morgan('dev', {skip:req=>req.path.startsWith('/bot-link/challenge/') || req.path === '/auth/osu/callback'}));
 
 const corsOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '')
     .split(',')
@@ -275,10 +275,15 @@ function getUtcRetentionCutoff(retentionDays) {
 }
 
 // 解析 JSON 请求体
+// The public desktop API has its own bounded parser and PM2-wide budget.
+// CSRF remains active for all writes (OMA sends no website cookie).
+app.use('/oma', csrfMiddleware, require('./routes/omaRoute'));
 app.use(express.json());
 app.use(csrfMiddleware);
 
 // 路由
+app.use('/bot-score', require('./routes/botScoreRoute'));
+app.use('/bot-link', commonLimiter, require('./routes/botLinkRoute'));
 app.use('/user', commonLimiter, userRoutes);
 app.use('/auth', osuLimiter, authRoutes);
 app.use('/post', commonLimiter, postRoutes);

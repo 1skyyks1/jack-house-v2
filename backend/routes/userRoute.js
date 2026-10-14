@@ -24,6 +24,13 @@ router.get('/:user_id/tournaments', checkAuth.optional, UserController.getUserTo
 // 获取用户在站内精选图包中的最近成绩
 router.get('/:user_id/recent-scores', checkAuth.optional, UserController.getUserRecentScores);
 
+router.get('/:user_id/score-attempts', async (req,res)=>{
+    const userId=Number(req.params.user_id), client=req.query.client||'stable';
+    if(!Number.isSafeInteger(userId)||userId<1||!['stable','lazer'].includes(client))return res.status(400).json({message:'查询参数无效。'});
+    try {res.json(await require('../services/userScoreAttemptService').listUserScoreAttempts(userId,{client,limit:req.query.limit,offset:req.query.offset}));}
+    catch {res.status(500).json({message:'成绩暂不可用。'});}
+});
+
 // 精选池 PP：双客户端统计和独立 BP List
 router.get('/:user_id/pp', PPController.getUserPP);
 router.get('/:user_id/pp/best', PPController.getBestPlays);
